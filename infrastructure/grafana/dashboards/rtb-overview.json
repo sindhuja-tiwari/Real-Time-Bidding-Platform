@@ -1,0 +1,57 @@
+{
+  "title": "RTB Platform Overview",
+  "uid": "rtb-overview",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "panels": [
+    {
+      "id": 1, "title": "Auction Requests/sec", "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [{"expr": "rate(rtb_auction_requests_total[1m])"}]
+    },
+    {
+      "id": 2, "title": "Auction Latency P50/P95/P99 (ms)", "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum(rate(rtb_auction_latency_ms_bucket[1m])) by (le))", "legendFormat": "P50"},
+        {"expr": "histogram_quantile(0.95, sum(rate(rtb_auction_latency_ms_bucket[1m])) by (le))", "legendFormat": "P95"},
+        {"expr": "histogram_quantile(0.99, sum(rate(rtb_auction_latency_ms_bucket[1m])) by (le))", "legendFormat": "P99"}
+      ]
+    },
+    {
+      "id": 3, "title": "DSP Response Latency (ms)", "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(rtb_dsp_response_latency_ms_bucket[1m])) by (le, dsp_name))", "legendFormat": "{{dsp_name}} P95"}]
+    },
+    {
+      "id": 4, "title": "DSP Timeout Rate", "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "targets": [{"expr": "rate(rtb_dsp_timeout_total[1m])", "legendFormat": "{{dsp_name}}"}]
+    },
+    {
+      "id": 5, "title": "Winning Bid Value", "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "targets": [{"expr": "histogram_quantile(0.5, sum(rate(rtb_winning_bid_value_bucket[1m])) by (le))", "legendFormat": "Median winning bid"}]
+    },
+    {
+      "id": 6, "title": "Auction Failures", "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "targets": [
+        {"expr": "rate(rtb_auction_failed_total[1m])", "legendFormat": "Failed"},
+        {"expr": "rate(rtb_auction_no_bid_total[1m])", "legendFormat": "No bid"}
+      ]
+    },
+    {
+      "id": 7, "title": "Redis Hit Ratio", "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+      "targets": [{"expr": "sum(rate(rtb_cache_hit_total[1m])) / (sum(rate(rtb_cache_hit_total[1m])) + sum(rate(rtb_cache_miss_total[1m])))"}]
+    },
+    {
+      "id": 8, "title": "Kafka Consumer Lag", "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+      "targets": [{"expr": "rtb_kafka_consumer_lag", "legendFormat": "{{group}}/{{topic}}"}]
+    }
+  ]
+}
