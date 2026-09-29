@@ -22,3 +22,12 @@ class LatencyBucket(BaseModel):
     p95_latency_ms: float
     p99_latency_ms: float
     count: int
+
+
+class AuctionCountBucket(BaseModel):
+    bucket_start: str
+    total_auctions: int
+    completed_auctions: int
+    no_bid_auctions: int
+    failed_auctions: int
+    avg_winning_bid: float

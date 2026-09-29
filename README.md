@@ -1,39 +1,30 @@
-# Real-Time Bidding Platform
+# RTB Platform
 
-A simplified real-time bidding (programmatic advertising) auction platform.
-A publisher sends an ad request, the platform asks several demand-side
-platforms (DSPs) to bid in parallel, picks a winner within a fixed latency
-budget, reserves the winning campaign's budget atomically, and returns the
-winning creative.
+A simplified real-time bidding (programmatic advertising) auction platform,
+built as a portfolio project to demonstrate low-latency request handling,
+concurrent I/O, event-driven architecture, and the operational concerns
+(caching, idempotency, rate limiting, observability, failure handling) that
+come with them.
 
 ## What it does
 
-A publisher calls `POST /api/v1/auctions`. The platform:
+A publisher sends an ad request (`POST /api/v1/auctions`). The platform
+concurrently asks every eligible demand-side platform (DSP) to bid, enforces
+a strict per-DSP and global auction deadline, ranks the valid bids (first- or
+second-price), atomically reserves the winning campaign's budget, persists
+the result, and returns the winning creative — all within the auction's
+latency budget (default 100ms). Everything not required to answer the
+publisher (analytics, audit logging, budget reconciliation) happens
+asynchronously via Kafka.
 
-1. Asks every eligible DSP to bid concurrently, enforcing both a per-DSP
-   timeout and a global auction deadline (100 ms by default).
-2. Validates the bids and ranks them with a configurable strategy (first-price,
-   second-price, and others).
-3. Atomically reserves the winning campaign's budget, persists the auction and
-   its bids, and returns the winning creative.
+## Why this project exists
 
-Anything the publisher doesn't need in the response (analytics, audit logging,
-budget reconciliation) is published to Kafka and handled asynchronously.
-
-## Design highlights
-
-- **Deadline-bounded fan-out.** DSP calls run concurrently with `asyncio`. A DSP
-  that misses its timeout is recorded as `TIMEOUT` and dropped from the
-  auction, so one slow DSP cannot delay the response.
-- **Budgets never go negative.** Reservation is a single conditional
-  `UPDATE ... WHERE remaining_budget >= amount`, which is atomic under
-  concurrent auctions. See [`docs/database.md`](docs/database.md), Section 4.
-- **Idempotent auctions.** `request_id` is unique in the database, so a retried
-  request cannot run a second auction.
-- **Off the hot path.** Analytics, audit and reconciliation consume Kafka
-  events instead of adding latency to the auction request.
-- **Defined degradation.** [`docs/failure-handling.md`](docs/failure-handling.md)
-  describes what happens when Postgres, Redis, Kafka or a DSP degrades.
+It's designed to be discussable in a systems-design interview: every major
+technology choice (Postgres, Redis, Kafka, asyncio) is used because of a
+specific problem it solves here, not for résumé decoration. See
+`docs/architecture.md` Section 7 and `docs/database.md` Section 5 for the
+"why X and not Y" reasoning, and `docs/failure-handling.md` for what happens
+when each dependency degrades.
 
 ## Architecture
 
@@ -46,16 +37,14 @@ Next.js UI → FastAPI (modular monolith: campaign / auction / dsp / analytics)
 Prometheus + Grafana scrape /metrics for dashboards
 ```
 
-Details: [`docs/architecture.md`](docs/architecture.md) (service boundaries and
-technology choices), [`docs/database.md`](docs/database.md) (schema, indexes,
-budget concurrency), [`docs/auction-engine.md`](docs/auction-engine.md)
-(concurrency, validation, ranking, idempotency).
+Full write-up: `docs/architecture.md`. Schema and index rationale:
+`docs/database.md`. Auction algorithm details: `docs/auction-engine.md`.
 
 ## Running it locally
 
 ```bash
-git clone https://github.com/sindhuja-tiwari/Real-Time-Bidding-Platform.git
-cd Real-Time-Bidding-Platform
+git clone <this repo>
+cd rtb-platform
 cp .env.example .env
 
 docker compose up --build -d
@@ -68,7 +57,7 @@ docker compose exec backend python -m app.seed   # creates demo campaigns/DSPs, 
 - Grafana: http://localhost:3001 (admin/admin)
 - DSP simulator admin: http://localhost:9000/admin/dsps
 
-Send a test auction, using the `ad_slot_id` printed by the seed script:
+Send a test auction request (use the `ad_slot_id` printed by the seed script):
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/auctions \
@@ -82,7 +71,7 @@ curl -X POST http://localhost:8000/api/v1/auctions \
 
 Then open http://localhost:3000/auctions to see it in the dashboard.
 
-## Tests
+## Running the backend tests
 
 ```bash
 cd backend
@@ -90,50 +79,50 @@ pip install -r requirements.txt
 pytest -v
 ```
 
-24 tests cover bid validation, all ranking strategies (including the
+24 tests cover bid validation, all three ranking strategies (including the
 second-price tie-break), and the concurrency behavior of the DSP fan-out
-(parallel calls, per-DSP timeout, global deadline) using a mocked transport,
-so no live Postgres, Redis or Kafka is needed for this subset.
+(parallel calls, per-DSP timeout, global deadline) using a mocked transport
+— no live Postgres/Redis/Kafka required for this subset.
 
-## Performance
+## Load testing
 
-Measured with the Locust scenarios in `load-tests/` against the full
-Docker Compose stack on [machine: CPU, cores, RAM], with [N] concurrent users.
-
-| Scenario | Throughput | p50 | p99 | DSP timeout rate | Fill rate |
-|---|---|---|---|---|---|
-| 5 healthy DSPs | [ ] req/s | [ ] ms | [ ] ms | [ ]% | [ ]% |
-| 1 DSP stalled past its timeout | [ ] req/s | [ ] ms | [ ] ms | [ ]% | [ ]% |
-
-Methodology and how to reproduce: [`docs/performance.md`](docs/performance.md).
-
-## Known limitations
-
-- Analytics endpoints query the auction and bid tables directly. The Kafka
-  analytics consumer exists (`events/consumers/analytics_consumer.py`), but a
-  consumer-maintained rollup table is not yet in use.
-- Budget reservation serializes on each campaign's row, which would become a
-  bottleneck at very high per-campaign win rates. Options are discussed in
-  `docs/database.md`, Section 4.
-- The stack targets Docker Compose for local development. There are no
-  Kubernetes manifests.
+See `docs/performance.md` for the methodology and how to run it against your
+own running stack. **That document's numbers are placeholders** — run the
+load test yourself and fill in your actual measurements; this project
+deliberately does not ship fabricated performance numbers.
 
 ## Project structure
 
 ```
-Real-Time-Bidding-Platform/
-├── backend/          FastAPI app: api/, core/, models/, schemas/,
-│                     repositories/, services/, events/, workers/, tests/
-├── dsp-simulator/    Standalone FastAPI service simulating 5 DSPs
-├── frontend/         Next.js + TypeScript + Tailwind dashboard
-├── load-tests/       Locust scenarios
-├── infrastructure/   Prometheus + Grafana config
-├── docs/             architecture, database, auction-engine,
-│                     failure-handling, performance
+rtb-platform/
+├── backend/            FastAPI app: api/, core/, models/, schemas/,
+│                        repositories/, services/, events/, workers/, tests/
+├── dsp-simulator/      Standalone FastAPI service simulating 5 DSPs
+├── frontend/            Next.js + TypeScript + Tailwind dashboard
+├── load-tests/          Locust scenarios
+├── infrastructure/      Prometheus + Grafana config
+├── docs/                 architecture, database, auction-engine,
+│                        failure-handling, performance
 ├── docker-compose.yml
 └── .env.example
 ```
 
-## License
+## Documentation index
 
-MIT
+- [`docs/architecture.md`](docs/architecture.md) — service boundaries, request flow, tech rationale
+- [`docs/database.md`](docs/database.md) — schema, indexes, budget-concurrency query
+- [`docs/auction-engine.md`](docs/auction-engine.md) — concurrency, validation, ranking strategies, idempotency
+- [`docs/failure-handling.md`](docs/failure-handling.md) — degradation behavior per dependency, retry policy
+- [`docs/performance.md`](docs/performance.md) — load-testing methodology (numbers to be filled in by you)
+
+## Known limitations / honest gaps
+
+- Load-test numbers in `docs/performance.md` are placeholders (see above) —
+  this was built without a live Docker environment available to the author
+  at build time.
+- Analytics endpoints query the auction/bid tables directly rather than
+  reading from Kafka-consumer-maintained rollup tables; the async pipeline
+  exists (see `events/consumers/analytics_consumer.py`) but the rollup
+  table itself is a documented extension point, not yet implemented.
+- No Kubernetes manifests by design (Section 1 of the original spec) — the
+  whole stack targets Docker Compose for local development only.

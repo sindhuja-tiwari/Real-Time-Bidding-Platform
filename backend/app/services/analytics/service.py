@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.analytics_rollup import BUCKET_COLUMN_NAMES, AuctionMinuteRollup
 from app.models.auction import Auction
 from app.models.bid import Bid
-from app.schemas.analytics import AnalyticsOverview
+from app.schemas.analytics import AnalyticsOverview, AuctionCountBucket, LatencyBucket
+from app.services.analytics.percentiles import estimate_percentile
 
 
 class AnalyticsService:
@@ -54,3 +60,52 @@ class AnalyticsService:
             p99_latency_ms=percentile(0.99),
             avg_winning_bid=round(float(avg_bid_row), 4) if avg_bid_row else 0.0,
         )
+
+    async def _rollup_rows(self, minutes: int) -> list[AuctionMinuteRollup]:
+        """Reads from auction_minute_rollup, the table maintained
+        asynchronously by events/consumers/analytics_consumer.py -- NOT the
+        raw auction table. This is what keeps these two endpoints fast
+        regardless of how many auctions have ever run, at the cost of the
+        numbers reflecting whatever the consumer has processed so far
+        (eventually consistent, not read-your-writes)."""
+        since = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+        stmt = (
+            select(AuctionMinuteRollup)
+            .where(AuctionMinuteRollup.minute_bucket >= since)
+            .order_by(AuctionMinuteRollup.minute_bucket.asc())
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def latency_timeseries(self, minutes: int = 60) -> list[LatencyBucket]:
+        rows = await self._rollup_rows(minutes)
+        buckets: list[LatencyBucket] = []
+        for row in rows:
+            counts = [getattr(row, col) for col in BUCKET_COLUMN_NAMES]
+            total = sum(counts)
+            buckets.append(
+                LatencyBucket(
+                    bucket_start=row.minute_bucket.isoformat(),
+                    p50_latency_ms=estimate_percentile(counts, 0.50),
+                    p95_latency_ms=estimate_percentile(counts, 0.95),
+                    p99_latency_ms=estimate_percentile(counts, 0.99),
+                    count=total,
+                )
+            )
+        return buckets
+
+    async def auctions_timeseries(self, minutes: int = 60) -> list[AuctionCountBucket]:
+        rows = await self._rollup_rows(minutes)
+        return [
+            AuctionCountBucket(
+                bucket_start=row.minute_bucket.isoformat(),
+                total_auctions=row.total_auctions,
+                completed_auctions=row.completed_auctions,
+                no_bid_auctions=row.no_bid_auctions,
+                failed_auctions=row.failed_auctions,
+                avg_winning_bid=round(float(row.sum_winning_bid) / row.count_winning_bid, 4)
+                if row.count_winning_bid
+                else 0.0,
+            )
+            for row in rows
+        ]

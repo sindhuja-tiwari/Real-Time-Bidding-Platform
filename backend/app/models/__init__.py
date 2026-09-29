@@ -9,6 +9,7 @@ from app.models.dsp import DSP
 from app.models.auction import Auction
 from app.models.bid import Bid
 from app.models.impression import Impression, Click
+from app.models.analytics_rollup import AuctionMinuteRollup
 
 __all__ = [
     "Base",
@@ -23,4 +24,5 @@ __all__ = [
     "Bid",
     "Impression",
     "Click",
+    "AuctionMinuteRollup",
 ]
