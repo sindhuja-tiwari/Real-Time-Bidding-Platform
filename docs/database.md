@@ -256,6 +256,3 @@ With this schema agreed, Phase 1 implementation is:
 5. A stub `POST /api/v1/auctions` that persists an `Auction` row and returns
    a hardcoded "no real bidding yet" response — real concurrent bidding is
    Phase 2.
-
-Say the word and I'll start writing the Phase 1 code (models, migrations,
-and the FastAPI app) against this schema.
