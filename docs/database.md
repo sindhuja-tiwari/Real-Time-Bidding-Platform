@@ -1,6 +1,12 @@
-# RTB Platform — Database Design (Phase 1)
+# Database Design
 
-## 1. Entity relationship overview
+PostgreSQL is the system of record for campaigns, budgets, auctions and bids.
+Redis sits in front of it as a cache for campaign and DSP lookups and for rate
+limiting, but the two correctness guarantees in this document (a budget never
+goes negative, and a request ID never produces two auctions) are enforced by
+Postgres itself.
+
+## 1. Entity relationships
 
 ```
 User ──< (owns, optional) Advertiser
@@ -19,18 +25,23 @@ Impression 1───< Click
 
 Design notes:
 
-- `Auction.winning_bid_id` is a nullable FK to `bid.id`, set after the
-  winner is chosen (a bid always exists before it can "win" — chicken/egg
-  is avoided by inserting bids first, then updating the auction row in the
-  same transaction).
-- `Campaign.remaining_budget` is a denormalized running total, deliberately
-  redundant with `SUM(bid.amount) WHERE status='WON'`, because recomputing
-  a sum on every auction request would be too slow. It is kept correct via
-  the atomic reservation transaction described in Section 4.
-- `request_id` on `Auction` is unique — this is the idempotency key
-  (Phase 1 stand-in for the fuller Redis-backed idempotency layer in Phase 5).
+- `auction.winning_bid_id` is a nullable foreign key to `bid.id`. Bids are
+  inserted first, then the auction row is updated with the winner in the same
+  transaction, so a winner always refers to an existing bid. Because `auction`
+  and `bid` reference each other, the `auction → bid` constraint is added after
+  both tables exist (see the DDL below).
+- `campaign.remaining_budget` is a denormalized running total. It duplicates
+  `SUM(bid.amount) WHERE status = 'WON'`, but recomputing that sum on every
+  auction would be too slow on the hot path. It is kept correct by the
+  conditional update in Section 4.
+- `auction.request_id` is `UNIQUE` and serves as the idempotency key. A retried
+  request with the same `request_id` cannot create a second auction row. See
+  `auction-engine.md` for how the API responds to a duplicate.
 
 ## 2. Schema (DDL)
+
+Tables are listed in dependency order. `gen_random_uuid()` is built into
+PostgreSQL 13 and later; on older versions, enable the `pgcrypto` extension.
 
 ```sql
 -- =========================================================
@@ -116,6 +127,7 @@ CREATE TABLE dsp (
 -- Auctions & Bids
 -- =========================================================
 
+-- winning_bid_id gets its foreign key after the bid table exists (below).
 CREATE TABLE auction (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     request_id      TEXT NOT NULL UNIQUE,           -- idempotency key
@@ -124,7 +136,7 @@ CREATE TABLE auction (
     completed_at    TIMESTAMPTZ,
     duration_ms     INTEGER,
     status          TEXT NOT NULL CHECK (status IN ('PENDING', 'COMPLETED', 'NO_BID', 'FAILED')) DEFAULT 'PENDING',
-    winning_bid_id  UUID REFERENCES bid(id)
+    winning_bid_id  UUID
 );
 
 CREATE TABLE bid (
@@ -135,13 +147,12 @@ CREATE TABLE bid (
     amount              NUMERIC(10, 4) NOT NULL CHECK (amount >= 0),
     response_time_ms    INTEGER,
     status              TEXT NOT NULL CHECK (
-                            status IN ('VALID', 'TIMEOUT', 'INVALID', 'BELOW_FLOOR', 'BUDGET_EXCEEDED', 'WON', 'LOST')
+                            status IN ('VALID', 'TIMEOUT', 'INVALID', 'BELOW_FLOOR',
+                                       'BUDGET_EXCEEDED', 'WON', 'LOST')
                         ),
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- deferred FK, since auction.winning_bid_id references bid.id and bid.auction_id
--- references auction.id (created after bid, once both tables exist)
 ALTER TABLE auction
     ADD CONSTRAINT fk_auction_winning_bid
     FOREIGN KEY (winning_bid_id) REFERENCES bid(id);
@@ -164,95 +175,91 @@ CREATE TABLE click (
 );
 ```
 
-## 3. Indexes and rationale
+## 3. Indexes
 
 ```sql
-CREATE INDEX idx_campaign_status              ON campaign(status);
-CREATE INDEX idx_campaign_advertiser_id        ON campaign(advertiser_id);
-CREATE INDEX idx_campaign_start_end            ON campaign(start_time, end_time);
+CREATE INDEX idx_campaign_status          ON campaign(status);
+CREATE INDEX idx_campaign_advertiser_id   ON campaign(advertiser_id);
+CREATE INDEX idx_campaign_start_end       ON campaign(start_time, end_time);
 
-CREATE INDEX idx_bid_auction_id                ON bid(auction_id);
-CREATE INDEX idx_bid_dsp_id                    ON bid(dsp_id);
+CREATE INDEX idx_bid_auction_id           ON bid(auction_id);
+CREATE INDEX idx_bid_dsp_id               ON bid(dsp_id);
 
-CREATE INDEX idx_auction_created_at            ON auction(started_at);
-CREATE INDEX idx_auction_status                ON auction(status);
+CREATE INDEX idx_auction_started_at       ON auction(started_at);
+CREATE INDEX idx_auction_status           ON auction(status);
 
-CREATE INDEX idx_impression_campaign_id        ON impression(campaign_id);
-CREATE INDEX idx_impression_timestamp          ON impression("timestamp");
+CREATE INDEX idx_impression_campaign_id   ON impression(campaign_id);
+CREATE INDEX idx_impression_timestamp     ON impression("timestamp");
 ```
+
+PostgreSQL does not index foreign-key columns automatically, so each FK used
+in a join or lookup gets an explicit index.
 
 | Index | Why |
 |---|---|
-| `campaign(status)` | Every auction's eligibility query filters `WHERE status = 'ACTIVE'` — this is on the hot path in Phase 1 before Redis caching lands in Phase 3. |
-| `campaign(advertiser_id)` | Advertiser dashboard / campaign list views (`GET /campaigns?advertiser_id=`) and FK join performance. |
-| `campaign(start_time, end_time)` | Eligibility also filters on flight dates (`now() BETWEEN start_time AND end_time`); a composite index supports range scans instead of a full table scan as campaign volume grows. |
-| `bid(auction_id)` | `GET /api/v1/bids/{auction_id}` and the auction-detail page fetch all bids for one auction — this is the single most frequent read after an auction completes. |
-| `bid(dsp_id)` | DSP-level analytics (win rate, timeout rate per DSP) and the admin DSP page. |
-| `auction(created_at)` (on `started_at`) | Analytics queries and dashboards are time-windowed ("auctions in the last hour"); without this index they'd force a sequential scan as the auction table grows into millions of rows. |
-| `auction(status)` | Distinguishing `COMPLETED` vs `FAILED` vs `NO_BID` for monitoring/alerting queries and the analytics overview endpoint. |
-| `impression(campaign_id)` | Budget reconciliation and campaign performance rollups group by campaign. |
-| `impression(timestamp)` | Time-windowed impression/CTR reporting, same reasoning as `auction(started_at)`. |
+| `campaign(status)` | Auction eligibility filters on `status = 'ACTIVE'` when the Redis campaign cache misses. The column has only three values, so at larger scale a partial index on active campaigns would be the better choice. |
+| `campaign(advertiser_id)` | Campaign list views (`GET /campaigns?advertiser_id=`) and FK joins. |
+| `campaign(start_time, end_time)` | Eligibility also filters on flight dates (`now() BETWEEN start_time AND end_time`). |
+| `bid(auction_id)` | Fetching all bids for one auction (`GET /api/v1/bids/{auction_id}` and the auction-detail page), the most frequent read after an auction completes. |
+| `bid(dsp_id)` | Per-DSP analytics such as win rate and timeout rate. |
+| `auction(started_at)` | Time-windowed analytics ("auctions in the last hour") without a sequential scan as the table grows. |
+| `auction(status)` | Separating `COMPLETED`, `FAILED` and `NO_BID` for monitoring and the analytics overview. |
+| `impression(campaign_id)` | Budget reconciliation and per-campaign rollups. |
+| `impression(timestamp)` | Time-windowed impression and CTR reporting. |
 
-`request_id` and `dsp.name` already get an implicit unique index from their
-`UNIQUE` constraints, which is what makes the idempotency check
-(`SELECT ... WHERE request_id = $1`) O(log n) instead of a scan.
+`request_id` and `dsp.name` get unique indexes from their `UNIQUE`
+constraints, which makes the idempotency lookup an index probe rather than a
+scan.
 
-## 4. Concurrency-critical query: atomic budget reservation
+## 4. Atomic budget reservation
 
-Deferred to Phase 5 for the full design (with a Redis-based fast path), but
-the Phase 1 fallback — correct, if not yet optimized for throughput — is a
-single transaction using row locking:
+The winning campaign's budget is reserved with a single conditional update:
 
 ```sql
-BEGIN;
-
-SELECT remaining_budget
-FROM campaign
-WHERE id = $1
-FOR UPDATE;                          -- locks the row; concurrent auctions
-                                      -- targeting the same campaign serialize here
-
 UPDATE campaign
 SET remaining_budget = remaining_budget - $2
 WHERE id = $1
-  AND remaining_budget >= $2;        -- re-check under the lock; 0 rows updated
-                                      -- means "insufficient budget", handled
-                                      -- as a rejected bid, not an error
-
-COMMIT;
+  AND remaining_budget >= $2
+RETURNING remaining_budget;
 ```
 
-This is intentionally simple and correct first; Phase 5's documentation will
-cover why (and when) this becomes a bottleneck at high campaign-level QPS,
-and how a Redis `DECRBY`-based reservation with periodic reconciliation
-against Postgres addresses it.
+If no row is returned, the campaign cannot afford the bid. That outcome is
+handled as a rejected bid (`BUDGET_EXCEEDED`), not as an error.
 
-## 5. Why PostgreSQL over MongoDB (interview-ready answer)
+**Why this is safe under concurrency.** The `UPDATE` takes a row-level lock on
+the campaign. A concurrent `UPDATE` on the same row waits for that lock. Under
+the default `READ COMMITTED` isolation level, once the first transaction
+commits, PostgreSQL re-evaluates the second update's `WHERE` clause against the
+newly committed row before applying it. Two auctions therefore cannot both
+spend the last of a budget. The `CHECK (remaining_budget >= 0)` constraint is a
+second line of defense: an overspend caused by an application bug fails the
+transaction instead of writing a negative balance.
 
-The domain is inherently relational and write patterns need strong
-consistency:
+**Why there is no `SELECT ... FOR UPDATE`.** The update already takes the lock
+it needs. A separate locking read would add a round trip and hold the lock
+longer, which only helps when application code must read the balance and make
+a decision before writing.
 
-- Budgets must never go negative under concurrent writes → needs
-  transactions + row locking, which document stores support far less
-  naturally than Postgres.
-- Campaigns, creatives, bids, and auctions have real foreign-key
-  relationships that are queried in both directions (campaign → bids,
-  bid → campaign) — a relational schema with indexes fits this better than
-  embedding or manual joins in application code.
-- Reporting/analytics queries are naturally aggregate-and-filter
-  (`GROUP BY`, time-range `WHERE`) — exactly what SQL and Postgres's query
-  planner are built for.
-- We don't have a schema-flexibility requirement (wildly varying document
-  shapes) that would justify a document store's trade-offs.
+**Contention limit (not implemented).** Every auction won by the same campaign
+serializes on that campaign's row, so very high per-campaign win rates would
+make this row the bottleneck. Two standard ways to address it:
 
-## 6. Next step
+- Keep a Redis copy of each budget and reserve with a Lua script that checks
+  and decrements in one step, reconciling against Postgres periodically.
+  Plain `DECRBY` is not enough on its own, because it can take the balance
+  below zero.
+- Pre-allocate slices of each budget to workers so most reservations never
+  touch the shared row.
 
-With this schema agreed, Phase 1 implementation is:
+## 5. Why PostgreSQL
 
-1. FastAPI app skeleton (`app/main.py`, `app/core/config.py`, `app/core/db.py`)
-2. SQLAlchemy models mirroring this DDL + Alembic migration
-3. Pydantic schemas for request/response validation
-4. CRUD endpoints: Advertiser, Campaign, Creative, DSP
-5. A stub `POST /api/v1/auctions` that persists an `Auction` row and returns
-   a hardcoded "no real bidding yet" response — real concurrent bidding is
-   Phase 2.
+The domain is relational, and its writes need strong consistency:
+
+- Budgets must never go negative under concurrent writes, which calls for
+  transactions and row-level locking.
+- Campaigns, creatives, bids and auctions have real foreign-key relationships
+  that are queried in both directions (campaign → bids, bid → campaign).
+- Reporting queries are aggregate-and-filter (`GROUP BY` over time ranges),
+  which SQL and the Postgres planner handle well.
+- There is no need for flexible document shapes, the main reason to prefer a
+  document store.
