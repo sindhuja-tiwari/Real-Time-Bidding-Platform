@@ -120,9 +120,5 @@ rtb-platform/
 - Load-test numbers in `docs/performance.md` are placeholders (see above) —
   this was built without a live Docker environment available to the author
   at build time.
-- Analytics endpoints query the auction/bid tables directly rather than
-  reading from Kafka-consumer-maintained rollup tables; the async pipeline
-  exists (see `events/consumers/analytics_consumer.py`) but the rollup
-  table itself is a documented extension point, not yet implemented.
 - No Kubernetes manifests by design (Section 1 of the original spec) — the
   whole stack targets Docker Compose for local development only.
