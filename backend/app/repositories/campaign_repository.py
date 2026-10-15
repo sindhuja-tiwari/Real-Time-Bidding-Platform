@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -70,6 +71,9 @@ class CampaignRepository:
         already spent the budget, zero rows are updated and we return False
         (the caller treats this as BUDGET_EXCEEDED, not an error).
         """
+        # remaining_budget is NUMERIC -> Decimal; mixing it with a float in the
+        # UPDATE's in-Python session sync raises TypeError, so normalize first.
+        amount = Decimal(str(amount))
         locked = await self.db.execute(
             select(Campaign.remaining_budget).where(Campaign.id == campaign_id).with_for_update()
         )

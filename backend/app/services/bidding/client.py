@@ -3,13 +3,17 @@
 Design:
 
 - Every eligible DSP is called concurrently via asyncio, never sequentially.
-- Each DSP call has its OWN timeout (dsp.timeout_ms), enforced with
-  asyncio.wait_for around the individual httpx call.
-- The whole fan-out additionally has a GLOBAL deadline (AUCTION_GLOBAL_TIMEOUT_MS).
-  asyncio.wait_for around asyncio.gather(..., return_exceptions=True) enforces
-  this: if the global deadline fires, gather is cancelled, which cancels any
-  DSP tasks still in flight -- a single slow DSP (or several) can never hold
-  the auction open past the deadline.
+- Each DSP call has its OWN timeout (dsp.timeout_ms), passed to httpx so the
+  client times the request out itself.
+- The whole fan-out additionally has a GLOBAL deadline (AUCTION_GLOBAL_TIMEOUT_MS),
+  enforced with asyncio.wait: when it fires, the auction stops waiting -- a
+  single slow DSP (or several) can never hold the auction open past the
+  deadline.
+- In-flight DSP calls are never cancelled from outside. Cancelling an httpx
+  request mid-flight can leave its pooled connection stuck, and under load
+  those stuck connections exhaust the shared pool until every DSP call times
+  out, even to healthy DSPs. A call the auction stopped waiting for keeps
+  running in the background and ends at its own httpx timeout.
 - A DSP task that times out, errors, or is cancelled produces a RawBid with
   status=TIMEOUT (not an exception bubbling up) so the caller always gets a
   full list of per-DSP outcomes to log/persist, including the losers.
@@ -30,6 +34,29 @@ from app.services.bidding.types import BidStatus, RawBid
 logger = get_logger(__name__)
 
 
+def _discard_result(task: asyncio.Future) -> None:
+    """Retrieve a background task's outcome so asyncio doesn't warn about it."""
+    if not task.cancelled():
+        task.exception()
+
+
+async def _post_without_cancelling(
+    client: httpx.AsyncClient, url: str, payload: dict, timeout_s: float
+) -> httpx.Response:
+    """POST with a deadline that never cancels the request (see module doc).
+
+    httpx enforces timeout_s itself; the asyncio.wait is a backstop for when
+    it doesn't (e.g. timeouts that apply per phase, or mock transports). On
+    the backstop path the request is left to finish in the background.
+    """
+    task = asyncio.ensure_future(client.post(url, json=payload, timeout=httpx.Timeout(timeout_s)))
+    done, _ = await asyncio.wait({task}, timeout=timeout_s)
+    if not done:
+        task.add_done_callback(_discard_result)
+        raise asyncio.TimeoutError
+    return task.result()
+
+
 class BidRequestContext:
     def __init__(self, request_id: str, ad_slot_id: uuid.UUID, country: str, device: str):
         self.request_id = request_id
@@ -44,17 +71,16 @@ async def _call_one_dsp(
     start = time.perf_counter()
     timeout_s = dsp.timeout_ms / 1000
     try:
-        response = await asyncio.wait_for(
-            client.post(
-                f"{dsp.endpoint}/bid",
-                json={
-                    "request_id": ctx.request_id,
-                    "ad_slot_id": str(ctx.ad_slot_id),
-                    "country": ctx.country,
-                    "device": ctx.device,
-                },
-            ),
-            timeout=timeout_s,
+        response = await _post_without_cancelling(
+            client,
+            f"{dsp.endpoint}/bid",
+            {
+                "request_id": ctx.request_id,
+                "ad_slot_id": str(ctx.ad_slot_id),
+                "country": ctx.country,
+                "device": ctx.device,
+            },
+            timeout_s,
         )
         elapsed_ms = int((time.perf_counter() - start) * 1000)
         DSP_RESPONSE_LATENCY_MS.labels(dsp_name=dsp.name).observe(elapsed_ms)
@@ -132,35 +158,31 @@ async def collect_bids(
     DSP that never responds in time shows up as a TIMEOUT bid, not a missing
     entry, so downstream logging/analytics has a complete picture."""
     tasks = [asyncio.create_task(_call_one_dsp(http_client, dsp, ctx)) for dsp in dsps]
+    if not tasks:
+        return []
 
-    try:
-        results = await asyncio.wait_for(
-            asyncio.gather(*tasks, return_exceptions=True),
-            timeout=global_timeout_ms / 1000,
-        )
-    except asyncio.TimeoutError:
-        # Global deadline hit: cancel whatever is still running and collect
-        # partial results instead of failing the whole auction.
+    _, pending = await asyncio.wait(tasks, timeout=global_timeout_ms / 1000)
+    if pending:
+        # Global deadline hit: collect partial results instead of failing the
+        # whole auction. Unfinished calls are not cancelled (see module doc).
         logger.warning("auction_global_timeout", request_id=ctx.request_id, deadline_ms=global_timeout_ms)
-        results = []
-        for dsp, task in zip(dsps, tasks):
-            if task.done() and not task.cancelled():
-                results.append(task.result())
-            else:
-                task.cancel()
-                results.append(
-                    RawBid(
-                        dsp_id=dsp.id,
-                        dsp_name=dsp.name,
-                        campaign_id=uuid.UUID(int=0),
-                        amount=0,
-                        quality_score=0,
-                        response_time_ms=global_timeout_ms,
-                        status=BidStatus.TIMEOUT,
-                    )
+    results: list = []
+    for dsp, task in zip(dsps, tasks):
+        if task in pending:
+            task.add_done_callback(_discard_result)
+            results.append(
+                RawBid(
+                    dsp_id=dsp.id,
+                    dsp_name=dsp.name,
+                    campaign_id=uuid.UUID(int=0),
+                    amount=0,
+                    quality_score=0,
+                    response_time_ms=global_timeout_ms,
+                    status=BidStatus.TIMEOUT,
                 )
-        # let cancellations settle without propagating CancelledError
-        await asyncio.gather(*tasks, return_exceptions=True)
+            )
+        else:
+            results.append(task.exception() or task.result())
 
     # Any raw exception objects (shouldn't normally happen -- _call_one_dsp
     # catches broadly -- but this is a defensive backstop) become TIMEOUT bids.

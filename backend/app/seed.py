@@ -25,6 +25,9 @@ from app.models.publisher import AdSlot, Publisher
 from app.models.user import Advertiser
 
 DSP_SIMULATOR_URL = os.getenv("DSP_SIMULATOR_URL", "http://dsp-simulator:9000")
+# Long load tests (e.g. EvidenceOps incident runs) need budgets that outlast
+# thousands of auctions; the demo default stays small.
+CAMPAIGN_BUDGET = float(os.getenv("SEED_CAMPAIGN_BUDGET", "1000"))
 
 DSP_SEED = [
     {"name": "DSP-A", "base_bid": 2.5, "latency_ms": 20, "timeout_probability": 0.0},
@@ -57,8 +60,8 @@ async def seed() -> None:
             campaign = Campaign(
                 advertiser_id=advertiser.id,
                 name=f"Campaign for {spec['name']}",
-                daily_budget=1000,
-                remaining_budget=1000,
+                daily_budget=CAMPAIGN_BUDGET,
+                remaining_budget=CAMPAIGN_BUDGET,
                 bid_floor=0.1,
                 target_countries=[],
                 target_devices=[],

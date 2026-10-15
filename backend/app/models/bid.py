@@ -21,7 +21,7 @@ class Bid(Base):
     id = uuid_pk()
     auction_id = uuid_fk("auction.id", nullable=False)
     dsp_id = uuid_fk("dsp.id", nullable=False)
-    campaign_id = uuid_fk("campaign.id", nullable=False)
+    campaign_id = uuid_fk("campaign.id", nullable=True)
     amount: Mapped[float] = mapped_column(Numeric(10, 4), nullable=False)
     response_time_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False)

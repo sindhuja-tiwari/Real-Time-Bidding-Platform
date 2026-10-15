@@ -52,7 +52,7 @@ Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 @app.get("/health", tags=["health"])
 async def health():
-    return {"status": "ok", "service": settings.APP_NAME, "env": settings.ENV}
+    return {"status": "ok", "service": settings.APP_NAME, "env": settings.ENV, "version": settings.APP_VERSION}
 
 
 @app.on_event("shutdown")
