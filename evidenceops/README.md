@@ -10,10 +10,10 @@ The target question:
 > show the supporting evidence, and test a remediation without touching the
 > live system.
 
-This directory currently holds **milestones 1 to 4**:
+This directory currently holds **milestones 1 to 5**:
 
-- a reproducible incident harness with three injected failures and recorded
-  ground truth,
+- a reproducible incident harness with 22 injected incidents across six root
+  causes, each with recorded ground truth,
 - OpenTelemetry traces from the platform,
 - read-only diagnostic tools over a recorded run,
 - a tool-using investigator (Claude) that has to cite evidence for every claim,
@@ -21,9 +21,8 @@ This directory currently holds **milestones 1 to 4**:
   log-only prompt,
 - approval-gated remediation experiments in a disposable copy of the
   platform, and an ambiguous scenario where abstaining is the right answer,
-- a grader that scores any investigation method against ground truth.
-
-The larger scenario suite comes next (see [Roadmap](#roadmap)).
+- a grader that scores any investigation method against ground truth, and
+  [results across the whole suite](#results-across-the-suite).
 
 ## Quick start
 
@@ -35,7 +34,7 @@ pip install -r evidenceops/requirements.txt
 python -m evidenceops list          # scenarios and their root-cause category
 python -m evidenceops validate      # static checks, no Docker needed
 python -m evidenceops run s02-global-timeout-misconfigured
-python -m evidenceops run --all     # every scenario, about 3 minutes each
+python -m evidenceops run --all     # every scenario, 3 to 5 minutes each (about 90 minutes)
 python -m evidenceops investigate   # run the fixed workflow on every recorded run
 python -m evidenceops investigate --method agent_offline   # no API key needed
 python -m evidenceops investigate --method agent           # needs ANTHROPIC_API_KEY
@@ -66,10 +65,26 @@ your own Compose overrides, such as prebuilt images, on top of the harness's.
 3. **Baseline.** Open-loop auction traffic at a fixed rate from 20 simulated
    publishers. Open loop means requests keep arriving on schedule even when the
    platform slows down, like real publisher traffic.
-4. **Incident.** The scenario's steps fire at their offsets: deployments and
-   external DSP degradation, some causal and some decoys.
+4. **Incident.** The scenario's steps fire at their offsets, some causal and
+   some decoys. A step is one of:
+   - `deploy`: change allowlisted settings on backend and worker, optionally
+     running named schema migrations first (`faults.MIGRATIONS`);
+   - `dsp_config`: degrade simulated external bidders;
+   - `kafka_publish`: publish one of the fixed malformed messages in
+     `faults.POISON_TEMPLATES` to `auction-events`, as a buggy producer would;
+   - `kafka_replay`: rewind a worker consumer group's offsets by some minutes,
+     as an operator replaying a topic would.
+
+   A scenario can also ask for `setup.history_auctions`: old auctions written
+   before traffic starts, so the auction table is large enough for a missing
+   index to matter.
 5. **Capture** logs, read-only database exports, metrics, and per-request
    outcomes, then **verify** the incident actually happened.
+
+Two kinds of alert open an incident. `auction_success_rate` is verified by a
+drop in success rate. `analytics_backlog` and `analytics_overcount` are
+verified by the analytics rollup drifting at least 300 auctions behind, or
+ahead of, the auction table while auctions themselves stay healthy.
 
 Success means HTTP 201 with auction status `COMPLETED` within the
 publisher's 2 second timeout.
@@ -83,7 +98,11 @@ runs/<run_id>/
     deployments.jsonl                deployment log, decoy changes included
     logs/<service>.log               container logs with timestamps
     db/auctions.csv, bids.csv, ...   read-only table exports
-    db/pg_stat_activity.samples.jsonl  connection states every 5s
+    db/indexes.csv                   index definitions at the end of the run
+    db/<query>.samples.jsonl         every 5s: connection states, running
+                                     statements, table scan counters, and
+                                     auction table vs analytics rollup counts
+    kafka/consumer_groups.samples.jsonl  consumer offsets and lag every 10s
     metrics/scrapes.jsonl            backend /metrics every 5s
     traces/spans.otlp.jsonl          OpenTelemetry spans (OTLP JSON)
   investigations/<method>.json       reports written by `investigate`
@@ -96,8 +115,9 @@ runs/<run_id>/
 ```
 
 The split matters for evaluation. An investigator gets `observed/` only.
-`incident.json` uses an opaque incident id, and all three scenarios share the
-same report text, so nothing outside the evidence hints at the cause. Decoy
+`incident.json` uses an opaque incident id, and all scenarios with the same
+alert share the same report text, so nothing outside the evidence hints at the
+cause. Decoy
 config changes ride along in the same deployments as the real cause.
 
 ## Scenarios
@@ -171,6 +191,12 @@ evidence id (`E1`, `E2`, ...) that hypotheses must cite:
 | `trace_detail(trace_id)` | one trace's spans in order |
 | `log_events(service, start, end, contains)` | log events counted by kind, each with a `logs/<service>.log:<line>` reference |
 | `db_connections(start, end)` | sampled Postgres connection states and lock waits |
+| `slow_queries(start, end)` | statements seen running, grouped by shape with literals removed, and how long they had been running |
+| `table_scans(start, end)` | per-table sequential scans, rows read by them, and index scans in the window |
+| `db_indexes(table)` | index and unique-constraint definitions at the end of the window |
+| `consumer_lag(start, end)` | per consumer group: committed offset, lag, live members, where it stalled, and any rewind |
+| `analytics_consistency(start, end)` | finished auctions vs auctions counted by the analytics rollup |
+| `repeated_values(service, event, field, start, end)` | how often each value of a structured log field repeats, e.g. an auction id processed twice |
 
 ## Investigation reports and grading
 
@@ -194,8 +220,8 @@ Every method writes the same report shape (`investigation.py`):
 
 ## Baseline: fixed diagnostic workflow
 
-`baselines/fixed_workflow.py` is a runbook encoded as code. It runs the same
-10 tool calls in the same order on every incident:
+`baselines/fixed_workflow.py` is a runbook encoded as code. For a
+success-rate alert it runs the same 10 tool calls in the same order:
 
 1. Find the onset: a sustained drop below half the baseline success rate.
 2. Find deploys in the 60s before the onset.
@@ -204,9 +230,13 @@ Every method writes the same report shape (`investigation.py`):
 
 It then scores the three categories it has rules for, using fixed
 thresholds, and abstains when the best score is weak or two causes are close.
-It never asks a follow-up question of the data.
+For an analytics alert it runs a shorter fixed checklist (deployments,
+consumer lag, worker log events) with one rule: a worker that keeps failing on
+messages while a group falls behind is a poison message. It never asks a
+follow-up question of the data, and it has no rule for missing indexes or
+duplicate delivery.
 
-On a fresh `run --all` with traces enabled:
+On the original three scenarios:
 
 | Scenario | Fixed workflow's top answer | Runner-up |
 |---|---|---|
@@ -220,16 +250,13 @@ about 0.3s per investigation, no model cost.
 **Read that 3/3 with care.** The workflow's thresholds were written by someone
 who knew these three scenarios, so it is effectively fitted to them. It
 proves the evidence is sufficient and the grader works. It does not prove
-that a runbook is enough. The real comparison needs scenarios the rules were
-not written for, plus ambiguous incidents. Those come with the scenario
-expansion in milestone 5, where this baseline is expected to drop sharply:
-it has no rules at all for missing indexes, poison messages or duplicate
-delivery.
+that a runbook is enough. See [Results across the suite](#results-across-the-suite)
+for how it does on the scenarios it was not written for.
 
 ## The investigator
 
 `agent/` is a tool-using investigator. The model gets the on-call report and
-the eight read-only tools above, decides which to call, and finishes by
+the fourteen read-only tools above, decides which to call, and finishes by
 calling `submit_report` with a timeline and ranked hypotheses. The system
 prompt (`agent/spec.py`) asks it to keep several causes open, call a tool
 whose answer would separate the leading candidates before settling, treat a
@@ -294,11 +321,14 @@ Free tiers have tight rate limits, and cost is recorded as $0 for them.
 citation checks, transcript, grading) runs and is tested without a key. It is
 a rule-driven policy, not an LLM, and its scores say nothing about how the
 model will do. It works the way the system prompt asks the model to: it reads
-the symptom first (auctions stuck, or bidders not answering) and only calls
-the tools that separate the causes that symptom allows, then drills into the
-slowest trace. On the three recorded runs it gets the same 3/3 as the fixed
-workflow with 8 to 9 tool calls instead of 10. That comparison has the same
-caveat as the fixed workflow: both were written with these scenarios in view.
+the symptom first (auctions stuck, bidders not answering, requests turned
+away, analytics behind or overcounting) and only calls the tools that separate
+the causes that symptom allows, then drills into the slowest trace. When
+Postgres turns out to be busy rather than idle, for example, it asks which
+statements are running and which tables are being scanned before blaming the
+connection pool. Its rules were written with these scenarios in view, so its
+scores are an upper bound for a rule-based method, not a prediction of the
+model's.
 
 ## Baseline: log-only prompt
 
@@ -316,13 +346,17 @@ add over the logs alone.
 after a person approves it.
 
 **What can be proposed** (`remediation.py`). A proposal is a list of typed
-changes, and only three kinds exist:
+changes, and only these kinds exist:
 
 - `deploy_setting`: set an allowlisted setting to a value inside fixed bounds.
 - `rollback_setting`: restore a setting to its value before the last deploy
   that changed it, looked up in the run's deployment log.
 - `dsp_timeout_ms`: set the per-DSP timeout on named DSP rows, through a new
   admin `PATCH /api/v1/dsps/{id}` endpoint.
+- `rollback_migration`: run the fixed `down` SQL of a named migration from
+  `faults.MIGRATIONS`, and only if a deploy in this run applied it.
+- `skip_stuck_message`: stop the worker, move named consumer groups one
+  message past their committed offset, and start it again.
 
 Anything else, including a shell command, a setting outside the allowlist, or
 a value out of bounds, fails to parse and is rejected. Nothing tries to
@@ -334,7 +368,14 @@ including the baselines, a rule planner derives one from the top hypothesis:
 
 - a deploy-borne cause gets a rollback of the matching settings, never of the
   harmless decoy settings in the same deploy;
-- slow bidders get longer per-DSP timeouts and a longer deadline.
+- slow bidders get longer per-DSP timeouts and a longer deadline;
+- a missing index gets the migration named in the diagnosis rolled back;
+- a crash-looping worker gets the undecodable message skipped, and a worker
+  stalled retrying rejected messages gets `EVENT_MAX_RETRIES=0`, which
+  dead-letters them on the first failure;
+- duplicate delivery gets no proposal: the fix is code (record applied event
+  ids in the rollup transaction) plus a data rebuild, neither of which is an
+  allowlisted runtime change.
 
 When a report abstained, the proposal is marked as an **experiment** rather
 than a fix. It rolls back the suspect deploy's risky settings, so the result
@@ -353,11 +394,15 @@ prints it. `--approve "Name"` then:
 **The sandbox** (`sandbox.py`). An approved remediation runs in a freshly built
 copy of the platform with wiped volumes. The copy replays the original
 incident's scenario step for step, applies the changes once the incident is
-in full swing, and keeps traffic flowing for 45s more. The verdict needs both
+in full swing, and keeps traffic flowing for 65s more. The verdict needs both
 of these in the same experiment:
 
 - the incident reproduced, and
-- success then recovered to within 5 points of the experiment's own baseline.
+- the alerting metric recovered. For success-rate alerts, success measured
+  from 20s after the change (requests already queued for a connection when
+  it lands can still time out) must be within 5 points of the experiment's
+  own baseline. For analytics alerts, the rollup's drift in the last samples
+  must fall below a third of the alert threshold.
 
 The possible verdicts are `verified`, `not_fixed` (it reproduced but did not
 recover), or `inconclusive` (it never reproduced). `evaluate` reports the share
@@ -406,10 +451,12 @@ On the recorded run (success 99.4% to 0%), both rule-based methods abstain:
 ## Safety model
 
 - **No command execution from scenarios.** A scenario can only `deploy`
-  (change settings from a fixed allowlist on backend and worker) or
-  `dsp_config` (change allowlisted fields of the simulated DSPs). There is no
-  shell action, and the harness invokes Docker with fixed argument lists and
-  no shell.
+  (change settings from a fixed allowlist, and run migrations chosen by name
+  from fixed SQL), `dsp_config` (change allowlisted fields of the simulated
+  DSPs), publish a named message template, or rewind an allowlisted consumer
+  group by a bounded number of minutes. No SQL, payload or command text ever
+  comes from a scenario file. There is no shell action, and the harness
+  invokes Docker with fixed argument lists and no shell.
 - **Read-only evidence.** Database exports are named queries run with
   `default_transaction_read_only=on`.
 - **Disposable environment.** Runs use their own Compose project and wipe
@@ -447,6 +494,22 @@ Small additions that keep defaults unchanged: `DB_POOL_SIZE`,
 `DB_MAX_OVERFLOW`, `DB_POOL_TIMEOUT_SECONDS`, `APP_VERSION` (shown on
 `/health`), `SEED_CAMPAIGN_BUDGET`, and `SIM_RANDOM_SEED` for the DSP simulator.
 
+Two real bugs in the worker are left in place on purpose, because the suite's
+worker incidents exercise them:
+
+- **A message that fails to decode kills the worker.** The consumers decode
+  JSON in aiokafka's `value_deserializer`, which raises inside the
+  `async for` loop, outside the retry and dead-letter path. The exception
+  ends `asyncio.gather` and the process; on restart it reads the same
+  uncommitted message and dies again. The fix is to deserialize inside the
+  handler's `try` so a bad message is dead-lettered like any other failure.
+- **The analytics rollup is not idempotent.** Kafka delivers at least once,
+  but `handle_analytics_event` adds 1 per event without recording which
+  event ids it has applied, so any redelivery is counted twice.
+
+The harness overlay gives the worker `restart: unless-stopped`, as production
+would, so the first bug shows up as a crash loop rather than a silent stop.
+
 One backend process tops out at roughly 45 auctions/s on a 4-core machine,
 CPU bound. Scenarios run at 20–30 auctions/s to stay below that.
 
@@ -459,8 +522,8 @@ CPU bound. Scenarios run at 20–30 auctions/s to stay below that.
    references, plus a log-only prompt baseline.~~
 4. ~~Sandbox remediation experiments behind an approval gate; ambiguous
    scenarios where abstaining is the right answer.~~
-5. Expand to 20–30 scenarios (missing index, poison message, duplicate
-   delivery, connection leak cascade, budget exhaustion, ...), compare the
-   investigator with both baselines on accuracy, abstention, time, tool calls
-   and cost.
+5. ~~Expand to 20–30 scenarios (missing index, poison message, duplicate
+   delivery, ...) and compare the investigator with both baselines on
+   accuracy, abstention, time, tool calls and cost.~~ The model's own numbers
+   need an API key; see [Results across the suite](#results-across-the-suite).
 6. Demo, architecture write-up, and benchmark instructions.

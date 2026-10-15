@@ -31,8 +31,10 @@ from evidenceops.runner import ScenarioRun, _iso, _write_json
 from evidenceops.scenario import parse_scenario
 from evidenceops.stack import BACKEND_URL, Stack
 
-RECOVERY_SECONDS = 45
-RECOVERY_SETTLE_SECONDS = 5
+RECOVERY_SECONDS = 65
+# Requests already queued for a pooled connection when the change lands can
+# still time out; give them one pool-timeout-ish window to drain first.
+RECOVERY_SETTLE_SECONDS = 20
 RECOVERY_MARGIN = 0.05
 SANDBOX_ADMIN = {"email": "sandbox-admin@example.com", "password": "sandbox-only-password", "role": "ADMIN"}
 
