@@ -32,7 +32,7 @@ from evidenceops.stack import BACKEND_URL, Stack
 RECOVERY_SECONDS = 45
 RECOVERY_SETTLE_SECONDS = 5
 RECOVERY_MARGIN = 0.05
-SANDBOX_ADMIN = {"email": "sandbox-admin@evidenceops.local", "password": "sandbox-only-password", "role": "ADMIN"}
+SANDBOX_ADMIN = {"email": "sandbox-admin@example.com", "password": "sandbox-only-password", "role": "ADMIN"}
 
 
 class RemediationExperiment(ScenarioRun):
