@@ -28,3 +28,8 @@ class DSPRepository:
         await self.db.commit()
         await self.db.refresh(dsp)
         return dsp
+
+    async def save(self, dsp: DSP) -> DSP:
+        await self.db.commit()
+        await self.db.refresh(dsp)
+        return dsp

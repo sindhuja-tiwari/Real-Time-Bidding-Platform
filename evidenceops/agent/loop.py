@@ -169,6 +169,7 @@ def investigate(
         abstained=bool(submitted.get("abstain")),
         abstain_reason=submitted.get("abstain_reason", ""),
         timeline=submitted.get("timeline") or [],
+        remediation=submitted.get("remediation") or {},
         meta=meta,
         transcript=messages,
         **common,

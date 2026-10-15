@@ -125,6 +125,41 @@ def _cmd_investigate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _show(proposal: Dict[str, Any]) -> None:
+    print(f"{proposal['run_id']} [{proposal['method']}] {proposal['purpose']} for {proposal.get('hypothesis')}"
+          f" (from the {proposal['source']}; digest {proposal['digest']})")
+    print(f"  why: {proposal['rationale']}")
+    for c in proposal["resolved_changes"]:
+        if c["kind"] == "deploy_setting":
+            note = " (rollback)" if c.get("rolled_back") else ""
+            print(f"  - set {c['setting']}={c['value']}{note}")
+        else:
+            print(f"  - set timeout_ms={c['value']} on {', '.join(c['dsps'])}")
+
+
+def _cmd_remediate(args: argparse.Namespace) -> int:
+    from evidenceops import remediation
+
+    for run_dir in _run_dirs(args.runs):
+        if not args.approve:
+            proposal = remediation.propose(run_dir, args.method)
+            _show(proposal)
+            print(f"  awaiting approval: rerun with --approve 'Your Name' to test it in a disposable sandbox")
+            continue
+        from evidenceops.sandbox import run_experiment
+
+        proposal = remediation.approve(run_dir, args.method, args.approve)
+        _show(proposal)
+        print(f"  approved by {proposal['approved_by']}; rebuilding a disposable platform to test it", flush=True)
+        result = run_experiment(run_dir, proposal, time_scale=0.5 if args.quick else 1.0)
+        print(
+            f"  {result['verdict'].upper()}: baseline {result['baseline_success_rate']:.3f}, "
+            f"incident {result['incident_success_rate']:.3f}, after remediation {result['recovered_success_rate']:.3f}",
+            flush=True,
+        )
+    return 0
+
+
 def _cmd_evaluate(args: argparse.Namespace) -> int:
     from evidenceops import investigation
 
@@ -134,7 +169,11 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
         found = sorted(p for p in (run_dir / "investigations").glob("*.json") if not p.name.endswith(".transcript.json"))
         for path in found:
             if not args.methods or path.stem in args.methods:
-                rows.append(investigation.grade(json.loads(path.read_text()), truth))
+                row = investigation.grade(json.loads(path.read_text()), truth)
+                result = run_dir / "remediation" / f"{path.stem}.result.json"
+                if result.exists():
+                    row["remediation_verdict"] = json.loads(result.read_text())["verdict"]
+                rows.append(row)
     for r in rows:
         mark = "abstain" if r["abstained"] else ("OK " if r["top1_correct"] else "MISS")
         print(f"{r['method']:16} {r['scenario_id']:34} {mark:8} truth={r['truth']:24} predicted={r['predicted']}  top3={r['top3']}")
@@ -172,6 +211,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     inv.add_argument("--effort", default="high", choices=["low", "medium", "high", "xhigh", "max"], help="Claude only")
     inv.add_argument("--max-tool-calls", type=int, default=20, help="tool budget for agent methods")
     inv.set_defaults(func=_cmd_investigate)
+
+    rem = sub.add_parser("remediate", help="propose a remediation from an investigation; test it once approved")
+    rem.add_argument("runs", nargs="*", help="run directories (default: all under evidenceops/runs)")
+    rem.add_argument("--method", default="fixed_workflow", help="whose investigation to remediate from")
+    rem.add_argument("--approve", metavar="NAME", help="approve the saved proposal and run it in a sandbox")
+    rem.add_argument("--quick", action="store_true", help="halve the sandbox's traffic phases")
+    rem.set_defaults(func=_cmd_remediate)
 
     ev = sub.add_parser("evaluate", help="grade saved investigations against ground truth")
     ev.add_argument("runs", nargs="*", help="run directories (default: all under evidenceops/runs)")

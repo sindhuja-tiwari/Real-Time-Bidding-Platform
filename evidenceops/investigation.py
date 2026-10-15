@@ -43,6 +43,7 @@ class Report:
     cost_usd: float = 0.0
     input_tokens: int = 0
     output_tokens: int = 0
+    remediation: Dict[str, Any] = field(default_factory=dict)
     meta: Dict[str, Any] = field(default_factory=dict)
     transcript: List[Any] = field(default_factory=list)
 
@@ -76,7 +77,9 @@ def grade(report: Dict[str, Any], ground_truth: Dict[str, Any]) -> Dict[str, Any
       method actually collected. A confident answer with no real evidence
       behind it counts as unsupported, right or wrong.
     - correct_abstention: on an ambiguous scenario, abstaining is the right
-      answer; on a clear one, abstaining is a miss.
+      answer; on a clear one, abstaining is a miss. ``candidates_in_top3``
+      records the next best thing on an ambiguous scenario: no abstention,
+      but every indistinguishable cause still ranked in the top three.
     """
     truth = ground_truth["category"]
     ambiguous = bool(ground_truth.get("ambiguous"))
@@ -99,6 +102,10 @@ def grade(report: Dict[str, Any], ground_truth: Dict[str, Any]) -> Dict[str, Any
         "top3_correct": top3,
         "abstained": abstained,
         "correct_abstention": abstained if ambiguous else None,
+        # Ambiguous only: did a non-abstaining report at least keep every
+        # indistinguishable cause in its top three?
+        "candidates_in_top3": (all(c in ranked[:3] for c in ground_truth.get("candidates") or [truth]) and not abstained)
+        if ambiguous else None,
         "supported": supported if top else None,
         "unsupported_diagnosis": bool(top) and not supported,
         "tool_calls": report.get("tool_calls", 0),
@@ -118,6 +125,10 @@ def aggregate(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     def rate(items, key):
         return round(sum(bool(r[key]) for r in items) / len(items), 3) if items else None
 
+    tested = [
+        {**r, "remediation_verified": r["remediation_verdict"] == "verified"}
+        for r in rows if r.get("remediation_verdict") not in (None, "inconclusive")
+    ]
     times = [r["time_to_correct_diagnosis"] for r in rows if r["time_to_correct_diagnosis"] is not None]
     return {
         "runs": len(rows),
@@ -125,8 +136,11 @@ def aggregate(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         "top3_accuracy": rate(clear, "top3_correct"),
         "abstention_rate_on_clear": rate(clear, "abstained"),
         "correct_abstention_on_ambiguous": rate(ambiguous, "correct_abstention"),
+        "candidates_in_top3_on_ambiguous": rate(ambiguous, "candidates_in_top3"),
         "unsupported_diagnosis_rate": rate(diagnosed, "unsupported_diagnosis"),
         "mean_tool_calls": round(sum(r["tool_calls"] for r in rows) / len(rows), 2),
         "mean_time_to_correct_diagnosis_s": round(sum(times) / len(times), 3) if times else None,
         "mean_cost_usd": round(sum(r["cost_usd"] for r in rows) / len(rows), 4),
+        "remediations_tested": len(tested),
+        "remediation_verified_rate": rate(tested, "remediation_verified"),
     }

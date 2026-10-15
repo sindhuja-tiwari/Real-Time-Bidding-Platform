@@ -1,0 +1,60 @@
+id: s04-ambiguous-deadline-and-slow-bidders
+title: A shorter deadline ships just as the bidders slow down
+
+ambiguous: true
+
+report: >
+  Auction success rate dropped sharply shortly after the auction backend was
+  deployed this afternoon. Identify the likely cause, show the supporting
+  evidence, and test a remediation without touching the live system.
+
+traffic:
+  rps: 20
+  baseline_seconds: 40
+  incident_seconds: 60
+
+steps:
+  # 0: a deploy trims the auction deadline from 100ms to 80ms, a change that
+  #    is harmless on its own while the bidders answer in 25-60ms
+  - at: 0
+    action: deploy
+    version: 1.4.0
+    env:
+      AUCTION_GLOBAL_TIMEOUT_MS: "80"
+      REDIS_CACHE_TTL_SECONDS: "45"
+  # 1: two seconds later, four bidders slow to ~85ms, which would still fit
+  #    inside the old 100ms deadline
+  - at: 2
+    action: dsp_config
+    dsps: [dsp-a, dsp-b, dsp-d, dsp-e]
+    set:
+      latency_ms: 85
+      latency_jitter_ms: 4
+
+ground_truth:
+  category: config_regression
+  candidates: [config_regression, external_dsp_latency]
+  component: backend setting AUCTION_GLOBAL_TIMEOUT_MS together with slower DSP-A, DSP-B, DSP-D, DSP-E
+  summary: >
+    Neither change alone breaks auctions: the bidders at ~85ms fit in the old
+    100ms deadline, and the 80ms deadline is fine for bidders at 25-60ms.
+    Together, every call to the four slowed bidders is cut at 80ms. The
+    telemetry cannot tell this apart from "the bidders became too slow for any
+    deadline", because their real latency is never observed: every call ends
+    at the 80ms cut. Abstaining, or ranking both causes, is the honest
+    answer; a sandbox experiment that restores the 100ms deadline settles it
+    (success recovers).
+  causal_steps: [0, 1]
+  causal_settings: [AUCTION_GLOBAL_TIMEOUT_MS]
+  decoy_settings: [REDIS_CACHE_TTL_SECONDS]
+  distinguishing_evidence:
+    - TIMEOUT bids for DSP-A/B/D/E land at ~80ms, the new global deadline, so their true latency is censored
+    - DSP-A answered in ~26ms before the deploy and now times out at 80ms, so the bidders did slow down
+    - the deploy lowered AUCTION_GLOBAL_TIMEOUT_MS from 100 to 80 at the same moment
+  remediation:
+    description: >
+      Roll AUCTION_GLOBAL_TIMEOUT_MS back to 100. Raising per-DSP timeouts
+      alone does not help, since the 80ms global deadline still cuts every call.
+    changes:
+      - {kind: deploy_setting, setting: AUCTION_GLOBAL_TIMEOUT_MS, value: "100"}
+    expected_min_success_rate: 0.9

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_redis_dep, require_role
 from app.core.db import get_db
-from app.schemas.dsp import DSPCreate, DSPResponse
+from app.schemas.dsp import DSPCreate, DSPResponse, DSPUpdate
 from app.services.dsp.service import DSPService
 
 router = APIRouter(prefix="/dsps", tags=["dsps"])
@@ -37,4 +37,18 @@ async def list_dsps(db: AsyncSession = Depends(get_db), redis_client=Depends(get
 async def get_dsp(dsp_id: uuid.UUID, db: AsyncSession = Depends(get_db), redis_client=Depends(get_redis_dep)):
     service = DSPService(db, redis_client)
     dsp = await service.get(dsp_id)
+    return DSPResponse.model_validate(dsp)
+
+
+@router.patch("/{dsp_id}", response_model=DSPResponse)
+async def update_dsp(
+    dsp_id: uuid.UUID,
+    body: DSPUpdate,
+    db: AsyncSession = Depends(get_db),
+    redis_client=Depends(get_redis_dep),
+    _user=Depends(require_role("ADMIN")),
+):
+    service = DSPService(db, redis_client)
+    dsp = await service.update(dsp_id, **body.model_dump(exclude_unset=True))
+    await service.invalidate_cache()
     return DSPResponse.model_validate(dsp)
