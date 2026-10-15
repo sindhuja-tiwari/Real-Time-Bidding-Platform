@@ -39,6 +39,7 @@ python -m evidenceops investigate   # run the fixed workflow on every recorded r
 python -m evidenceops investigate --method agent_offline   # no API key needed
 python -m evidenceops investigate --method agent           # needs ANTHROPIC_API_KEY
 python -m evidenceops investigate --method log_only        # needs ANTHROPIC_API_KEY
+python -m evidenceops investigate --method agent --provider gemini   # free tier, GEMINI_API_KEY
 python -m evidenceops evaluate      # grade saved investigations against ground truth
 pytest evidenceops/tests            # unit tests, no Docker needed
 ```
@@ -267,6 +268,22 @@ python -m evidenceops investigate --method agent
 
 Keys are read from the environment only; nothing in this repository stores
 one.
+
+### Free-tier providers
+
+`--provider gemini` or `--provider groq` runs the same agent and log-only
+baseline on a model with a free tier, through their OpenAI-compatible chat
+APIs (`agent/openai_compat.py`). The harness is unchanged: same tools, same
+citation checks, same grading. Reports are saved as `agent_gemini`,
+`log_only_groq` and so on, so they can be compared with the Claude runs.
+
+| Provider | Get a key | Export | Default model |
+|---|---|---|---|
+| Gemini | <https://aistudio.google.com/apikey> | `GEMINI_API_KEY` | `gemini-2.5-flash` |
+| Groq | <https://console.groq.com/keys> | `GROQ_API_KEY` | `llama-3.3-70b-versatile` |
+
+Pass `--model` to use another model; provider model lists change often.
+Free tiers have tight rate limits, and cost is recorded as $0 for them.
 
 ### Without a key: `agent_offline`
 

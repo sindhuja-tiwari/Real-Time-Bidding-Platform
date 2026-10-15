@@ -59,11 +59,28 @@ def _fixed_workflow(run_dir: Path, args: argparse.Namespace):
     return fixed_workflow.investigate(run_dir)
 
 
-def _agent(run_dir: Path, args: argparse.Namespace):
-    from evidenceops.agent import claude, loop
+def _backend(args: argparse.Namespace):
+    """The model behind agent and log_only, built once per command."""
+    if getattr(args, "_backend", None) is None:
+        if args.provider == "anthropic":
+            from evidenceops.agent import claude
 
-    model = claude.ClaudeModel(model=args.model, effort=args.effort)
-    return loop.investigate(run_dir, model, method="agent", max_tool_calls=args.max_tool_calls)
+            args._backend = claude.ClaudeModel(model=args.model or claude.DEFAULT_MODEL, effort=args.effort)
+        else:
+            from evidenceops.agent.openai_compat import OpenAICompatModel
+
+            args._backend = OpenAICompatModel(args.provider, model=args.model)
+    return args._backend
+
+
+def _suffix(args: argparse.Namespace) -> str:
+    return "" if args.provider == "anthropic" else f"_{args.provider}"
+
+
+def _agent(run_dir: Path, args: argparse.Namespace):
+    from evidenceops.agent import loop
+
+    return loop.investigate(run_dir, _backend(args), method="agent" + _suffix(args), max_tool_calls=args.max_tool_calls)
 
 
 def _agent_offline(run_dir: Path, args: argparse.Namespace):
@@ -75,10 +92,10 @@ def _agent_offline(run_dir: Path, args: argparse.Namespace):
 def _log_only(run_dir: Path, args: argparse.Namespace):
     from evidenceops.baselines import log_only
 
-    return log_only.investigate(run_dir, model=args.model, effort=args.effort)
+    return log_only.investigate(run_dir, _backend(args), method="log_only" + _suffix(args))
 
 
-# Methods marked True call the Claude API and need ANTHROPIC_API_KEY.
+# Methods marked True call a model API and need a key for --provider.
 METHODS = {
     "fixed_workflow": (_fixed_workflow, False),
     "agent_offline": (_agent_offline, False),
@@ -114,9 +131,9 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
     rows = []
     for run_dir in _run_dirs(args.runs):
         truth = json.loads((run_dir / "ground_truth" / "ground_truth.json").read_text())
-        for method in args.methods or sorted(METHODS):
-            path = run_dir / "investigations" / f"{method}.json"
-            if path.exists():
+        found = sorted(p for p in (run_dir / "investigations").glob("*.json") if not p.name.endswith(".transcript.json"))
+        for path in found:
+            if not args.methods or path.stem in args.methods:
                 rows.append(investigation.grade(json.loads(path.read_text()), truth))
     for r in rows:
         mark = "abstain" if r["abstained"] else ("OK " if r["top1_correct"] else "MISS")
@@ -149,8 +166,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     inv = sub.add_parser("investigate", help="run an investigation method on recorded runs")
     inv.add_argument("runs", nargs="*", help="run directories (default: all under evidenceops/runs)")
     inv.add_argument("--method", choices=list(METHODS), default="fixed_workflow")
-    inv.add_argument("--model", default="claude-opus-5-5", help="Claude model for agent and log_only")
-    inv.add_argument("--effort", default="high", choices=["low", "medium", "high", "xhigh", "max"])
+    inv.add_argument("--provider", default="anthropic", choices=["anthropic", "gemini", "groq"],
+                     help="model API for agent and log_only (gemini and groq have free tiers)")
+    inv.add_argument("--model", help="model name (default depends on --provider)")
+    inv.add_argument("--effort", default="high", choices=["low", "medium", "high", "xhigh", "max"], help="Claude only")
     inv.add_argument("--max-tool-calls", type=int, default=20, help="tool budget for agent methods")
     inv.set_defaults(func=_cmd_investigate)
 

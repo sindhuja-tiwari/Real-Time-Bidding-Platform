@@ -106,3 +106,18 @@ class ClaudeModel:
             cost_usd=cost_of(served, usage),
             model=served,
         )
+
+    def complete_json(self, system: str, prompt: str, schema: Dict[str, Any]) -> Dict[str, Any]:
+        """One request answered through structured outputs, constrained to ``schema``."""
+        options = request_options(self.name, self.effort)
+        options["output_config"] = {"effort": self.effort, "format": {"type": "json_schema", "schema": schema}}
+        response = create(self.client, system=system, messages=[{"role": "user", "content": prompt}], **options)
+        usage = usage_dict(response.usage)
+        served = getattr(response, "model", None) or self.name
+        return {
+            "stop_reason": response.stop_reason or "",
+            "text": "".join(b.text for b in response.content if b.type == "text"),
+            "usage": usage,
+            "cost_usd": cost_of(served, usage),
+            "model": served,
+        }

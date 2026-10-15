@@ -1,4 +1,4 @@
-"""Log-only prompt baseline: one Claude call, logs in, report out.
+"""Log-only prompt baseline: one model call, logs in, report out.
 
 This is what "paste the logs into a chatbot" looks like. The model gets the
 on-call report and the raw backend and worker logs for the telemetry window,
@@ -13,9 +13,9 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-from evidenceops.agent import claude, spec
+from evidenceops.agent import spec
 from evidenceops.investigation import Hypothesis, Report
 from evidenceops.telemetry import RunEvidence, classify_log
 
@@ -56,7 +56,8 @@ def excerpt(ev: RunEvidence, service: str, start: float, end: float) -> List[str
     return out
 
 
-def investigate(run_dir: Path, model: str = claude.DEFAULT_MODEL, effort: str = claude.DEFAULT_EFFORT, client: Optional[Any] = None) -> Report:
+def investigate(run_dir: Path, backend: Any, method: str = METHOD) -> Report:
+    """``backend`` is a ``ClaudeModel`` or ``OpenAICompatModel`` (anything with ``complete_json``)."""
     started = time.perf_counter()
     ev = RunEvidence(Path(run_dir) / "observed")
     start, end = ev.window
@@ -69,45 +70,38 @@ def investigate(run_dir: Path, model: str = claude.DEFAULT_MODEL, effort: str = 
         sections.append(f"<logs evidence_id=\"{eid}\" service=\"{service}\">\n" + "\n".join(lines) + "\n</logs>")
 
     prompt = f"On-call report:\n{ev.incident['report'].strip()}\n\n" + "\n\n".join(sections)
-    client = client or claude.make_client()
-    response = claude.create(
-        client,
-        system=SYSTEM.format(categories=", ".join(spec.CATEGORIES)),
-        messages=[{"role": "user", "content": prompt}],
-        **{**claude.request_options(model, effort), "output_config": {
-            "effort": effort, "format": {"type": "json_schema", "schema": spec.REPORT_SCHEMA},
-        }},
-    )
-    usage = claude.usage_dict(response.usage)
-    served = getattr(response, "model", None) or model
+    answer = backend.complete_json(SYSTEM.format(categories=", ".join(spec.CATEGORIES)), prompt, spec.REPORT_SCHEMA)
+    usage = answer["usage"]
     common = dict(
-        method=METHOD,
+        method=method,
         incident_id=ev.incident["incident_id"],
         evidence=evidence,
         tool_calls=0,
         elapsed_seconds=round(time.perf_counter() - started, 3),
-        cost_usd=round(claude.cost_of(served, usage), 6),
-        input_tokens=usage["input_tokens"] + usage["cache_read_input_tokens"] + usage["cache_creation_input_tokens"],
-        output_tokens=usage["output_tokens"],
-        meta={"model": model, "served_by": [served], "usage": usage},
+        cost_usd=round(answer["cost_usd"], 6),
+        input_tokens=usage.get("input_tokens", 0) + usage.get("cache_read_input_tokens", 0) + usage.get("cache_creation_input_tokens", 0),
+        output_tokens=usage.get("output_tokens", 0),
+        meta={"model": backend.name, "served_by": [answer["model"]], "usage": usage},
     )
-    if response.stop_reason in ("refusal", "max_tokens"):
-        return Report(hypotheses=[], abstained=True, abstain_reason=f"harness: stop_reason {response.stop_reason}", **common)
-    text = next(b.text for b in response.content if b.type == "text")
-    data = json.loads(text)
-    problems = spec.validate_report(data, set(evidence))
-    hypotheses = [
-        Hypothesis(
-            category=h["category"], statement=h["statement"], confidence=float(h["confidence"]),
-            supporting=list(h["supporting"]), refuting=list(h["refuting"]), component=h["component"],
-        )
-        for h in data["hypotheses"]
-    ]
+    if answer["stop_reason"] in ("refusal", "max_tokens"):
+        return Report(hypotheses=[], abstained=True, abstain_reason=f"harness: stop_reason {answer['stop_reason']}", **common)
+    try:
+        data = json.loads(answer["text"])
+        problems = spec.validate_report(data, set(evidence))
+        hypotheses = [
+            Hypothesis(
+                category=h["category"], statement=h["statement"], confidence=float(h["confidence"]),
+                supporting=list(h["supporting"]), refuting=list(h.get("refuting") or []), component=h.get("component", ""),
+            )
+            for h in data["hypotheses"]
+        ]
+    except (ValueError, KeyError, TypeError) as exc:
+        return Report(hypotheses=[], abstained=True, abstain_reason=f"harness: answer did not match the report schema ({exc})", **common)
     common["meta"]["validation_problems"] = problems
     return Report(
         hypotheses=hypotheses,
-        abstained=bool(data["abstain"]),
-        abstain_reason=data["abstain_reason"],
-        timeline=data["timeline"],
+        abstained=bool(data.get("abstain")),
+        abstain_reason=data.get("abstain_reason", ""),
+        timeline=data.get("timeline") or [],
         **common,
     )

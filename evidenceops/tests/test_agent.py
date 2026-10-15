@@ -2,7 +2,10 @@
 import json
 from types import SimpleNamespace
 
+import httpx
+
 from evidenceops.agent import claude, loop, spec
+from evidenceops.agent.openai_compat import OpenAICompatModel
 from evidenceops.agent.offline import OfflinePolicy
 from evidenceops.baselines import log_only
 
@@ -125,10 +128,62 @@ def test_validation_catches_each_kind_of_bad_report():
 def test_log_only_sends_logs_and_no_tools(run_dir):
     answer = json.dumps(_report(["E1"]))
     client = FakeClient([[answer]])
-    report = log_only.investigate(run_dir, client=client)
+    report = log_only.investigate(run_dir, claude.ClaudeModel(client=client))
 
     request = client.requests[0]
     assert "tools" not in request and request["output_config"]["format"]["type"] == "json_schema"
     assert "QueuePool limit" in request["messages"][0]["content"]
     assert set(report.evidence) == {"E1", "E2"} and report.tool_calls == 0
     assert report.hypotheses[0].category == "db_pool_exhaustion" and report.meta["validation_problems"] == []
+
+
+def _chat_client(replies):
+    """An httpx client whose server answers chat-completions requests from a script."""
+    requests = []
+
+    def handler(request):
+        requests.append(json.loads(request.content))
+        message = replies.pop(0)
+        finish = "tool_calls" if message.get("tool_calls") else "stop"
+        return httpx.Response(200, json={
+            "model": "llama-test", "choices": [{"message": message, "finish_reason": finish}],
+            "usage": {"prompt_tokens": 50, "completion_tokens": 7},
+        })
+
+    return httpx.Client(base_url="http://mock", transport=httpx.MockTransport(handler)), requests
+
+
+def _call(cid, name, args):
+    return {"id": cid, "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}
+
+
+def test_free_tier_providers_run_the_same_loop(run_dir):
+    client, requests = _chat_client([
+        {"role": "assistant", "content": None, "tool_calls": [_call("c1", "bid_outcomes", WINDOW), _call("c2", "alert_timeline", "not json")]},
+        {"role": "assistant", "content": None, "tool_calls": [_call("c3", "submit_report", _report(["E1"]))]},
+    ])
+    report = loop.investigate(run_dir, OpenAICompatModel("groq", client=client), method="agent_groq")
+
+    second = requests[1]
+    assert second["model"] == "llama-3.3-70b-versatile" and second["messages"][0]["role"] == "system"
+    assert [m["role"] for m in second["messages"][1:]] == ["user", "assistant", "tool", "tool"]
+    assert second["tools"][0]["type"] == "function"
+    assert not report.abstained and report.hypotheses[0].supporting == ["E1"]
+    assert report.tool_calls == 1 and report.output_tokens == 14 and report.cost_usd == 0.0
+
+
+def test_free_tier_log_only_parses_json_answers(run_dir):
+    client, requests = _chat_client([{"role": "assistant", "content": json.dumps(_report(["E2"]))}])
+    report = log_only.investigate(run_dir, OpenAICompatModel("gemini", client=client), method="log_only_gemini")
+    assert requests[0]["response_format"] == {"type": "json_object"}
+    assert report.method == "log_only_gemini" and report.hypotheses[0].supporting == ["E2"]
+
+
+def test_missing_free_tier_key_names_where_to_get_one(monkeypatch):
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    try:
+        OpenAICompatModel("groq")
+    except SystemExit as exc:
+        assert "console.groq.com/keys" in str(exc)
+    else:
+        raise AssertionError("expected SystemExit")
