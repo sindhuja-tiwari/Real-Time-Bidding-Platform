@@ -31,10 +31,12 @@ from evidenceops.runner import ScenarioRun, _iso, _write_json
 from evidenceops.scenario import parse_scenario
 from evidenceops.stack import BACKEND_URL, Stack
 
-RECOVERY_SECONDS = 65
-# Requests already queued for a pooled connection when the change lands can
-# still time out; give them one pool-timeout-ish window to drain first.
-RECOVERY_SETTLE_SECONDS = 20
+RECOVERY_SECONDS = 90
+# The verdict is taken on the last 30s, once the platform has had a full
+# minute to settle. A fix can need that: when a missing index comes back, the
+# requests queued behind the slow scans all reach the bidders at once and time
+# out for half a minute before traffic is back to normal.
+RECOVERY_SETTLE_SECONDS = 60
 RECOVERY_MARGIN = 0.05
 SANDBOX_ADMIN = {"email": "sandbox-admin@example.com", "password": "sandbox-only-password", "role": "ADMIN"}
 
@@ -131,10 +133,8 @@ class RemediationExperiment(ScenarioRun):
             "verdict": "verified" if reproduced and recovered_ok else ("not_fixed" if reproduced else "inconclusive"),
         }
 
-    def _capture_platform_evidence(self) -> None:
-        # The experiment's own telemetry is not needed for the verdict, but
-        # the deployment log and traffic are kept for audit.
-        return None
+    # The experiment captures the same evidence as an incident run, so a
+    # verdict can be audited (and a failed fix diagnosed) afterwards.
 
 
 def run_experiment(run_dir: Path, proposal: Dict[str, Any], stack: Optional[Stack] = None, time_scale: float = 1.0) -> Dict[str, Any]:
