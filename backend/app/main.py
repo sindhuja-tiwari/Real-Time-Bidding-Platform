@@ -9,6 +9,7 @@ from app.core.config import get_settings
 from app.core.exceptions import RTBException, rtb_exception_handler, unhandled_exception_handler
 from app.core.kafka_client import stop_producer
 from app.core.logging import configure_logging, get_logger, request_id_var
+from app.core.tracing import configure_tracing, shutdown_tracing
 
 settings = get_settings()
 configure_logging(settings.ENV)
@@ -48,6 +49,7 @@ app.add_exception_handler(Exception, unhandled_exception_handler)
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")
+configure_tracing(app)
 
 
 @app.get("/health", tags=["health"])
@@ -58,4 +60,5 @@ async def health():
 @app.on_event("shutdown")
 async def shutdown_event():
     await stop_producer()
+    shutdown_tracing()
     logger.info("app_shutdown")

@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     RATE_LIMIT_ADMIN_PER_MIN: int = 100
     RATE_LIMIT_DSP_PER_MIN: int = 500
 
+    # --- Tracing (off unless an OTLP endpoint is set) ---
+    OTEL_EXPORTER_OTLP_ENDPOINT: str = ""
+    OTEL_SERVICE_NAME: str = "rtb-backend"
+
     # --- Retries ---
     EVENT_MAX_RETRIES: int = 4
     EVENT_RETRY_BASE_SECONDS: float = 1.0

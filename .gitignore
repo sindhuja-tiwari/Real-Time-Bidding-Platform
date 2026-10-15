@@ -24,3 +24,4 @@ load-tests/results/
 
 # EvidenceOps incident runs (large; regenerate with python -m evidenceops run)
 evidenceops/runs/
+evidenceops/.telemetry/

@@ -1,7 +1,23 @@
 # Layered on top of the root docker-compose.yml by the EvidenceOps harness.
-# Only adds what incident runs need for reproducibility; the platform itself
-# is unchanged.
+# Adds what incident runs need: a fixed simulator seed for reproducibility
+# and an OpenTelemetry collector that writes the backend's traces to a file.
+# Paths are relative to the repository root (the Compose project directory).
 services:
   dsp-simulator:
     environment:
       SIM_RANDOM_SEED: "1337"
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.111.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    user: "0:0"
+    volumes:
+      - ./evidenceops/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+      - ./evidenceops/.telemetry:/data
+
+  backend:
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+    depends_on:
+      otel-collector:
+        condition: service_started

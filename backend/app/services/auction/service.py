@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.logging import auction_id_var, get_logger
+from app.core.tracing import tracer
 from app.core.metrics import (
     AUCTION_COMPLETED_TOTAL,
     AUCTION_FAILED_TOTAL,
@@ -91,7 +92,13 @@ class AuctionService:
         start = time.perf_counter()
 
         try:
-            response = await self._execute(auction, ad_slot, request)
+            with tracer.start_as_current_span("auction") as span:
+                span.set_attribute("auction.id", str(auction.id))
+                span.set_attribute("auction.request_id", request.request_id)
+                response = await self._execute(auction, ad_slot, request)
+                span.set_attribute("auction.status", response.status)
+                if response.winning_dsp_name:
+                    span.set_attribute("auction.winning_dsp", response.winning_dsp_name)
             AUCTION_COMPLETED_TOTAL.inc() if response.winning_bid_id else AUCTION_NO_BID_TOTAL.inc()
             return response
         except Exception:
