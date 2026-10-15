@@ -17,15 +17,6 @@ latency budget (default 100ms). Everything not required to answer the
 publisher (analytics, audit logging, budget reconciliation) happens
 asynchronously via Kafka.
 
-## Why this project exists
-
-It's designed to be discussable in a systems-design interview: every major
-technology choice (Postgres, Redis, Kafka, asyncio) is used because of a
-specific problem it solves here, not for résumé decoration. See
-`docs/architecture.md` Section 7 and `docs/database.md` Section 5 for the
-"why X and not Y" reasoning, and `docs/failure-handling.md` for what happens
-when each dependency degrades.
-
 ## Architecture
 
 ```
@@ -132,7 +123,7 @@ python -m evidenceops evaluate
 ## Known limitations / honest gaps
 
 - Load-test numbers in `docs/performance.md` are placeholders (see above) —
-  this was built without a live Docker environment available to the author
+  this was built without a live Docker environment available
   at build time.
 - No Kubernetes manifests by design (Section 1 of the original spec) — the
   whole stack targets Docker Compose for local development only.
