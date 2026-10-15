@@ -363,6 +363,22 @@ The possible verdicts are `verified`, `not_fixed` (it reproduced but did not
 recover), or `inconclusive` (it never reproduced). `evaluate` reports the share
 of tested remediations that were verified.
 
+### Results
+
+All four proposals from `agent_offline` on the recorded runs were approved and
+tested, each in its own freshly built sandbox:
+
+| Run | Proposal | Baseline | Incident | After the change | Verdict |
+|---|---|---|---|---|---|
+| s01 slow bidders | per-DSP timeouts for DSP-A/B/D/E and the global deadline to 200ms | 99.6% | 0.0% | 99.5% | verified |
+| s02 global timeout | roll `AUCTION_GLOBAL_TIMEOUT_MS` back to 100 | 99.5% | 2.1% | 99.5% | verified |
+| s03 DB pool | roll `DB_POOL_SIZE` and `DB_MAX_OVERFLOW` back | 99.8% | 0.0% | 99.9% | verified |
+| s04 ambiguous (experiment) | roll `AUCTION_GLOBAL_TIMEOUT_MS` back to 100 | 99.9% | 0.0% | 97.2% | verified |
+
+The s04 row is the one that matters most. The investigation correctly
+refused to pick a cause from telemetry, and the experiment then showed that
+undoing the deploy alone is enough, even with the bidders still slow.
+
 ## Ambiguous incidents
 
 `s04-ambiguous-deadline-and-slow-bidders` ships a deploy that trims the
