@@ -43,15 +43,28 @@ class Report:
     cost_usd: float = 0.0
     input_tokens: int = 0
     output_tokens: int = 0
+    meta: Dict[str, Any] = field(default_factory=dict)
+    transcript: List[Any] = field(default_factory=list)
 
     def to_json(self) -> Dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        data.pop("transcript")
+        return data
+
+
+def _plain(obj: Any) -> Any:
+    """JSON fallback for SDK objects in a transcript."""
+    dump = getattr(obj, "model_dump", None)
+    return dump(mode="json", exclude_none=True) if dump else str(obj)
 
 
 def save(report: Report, run_dir: Path) -> Path:
     path = Path(run_dir) / "investigations" / f"{report.method}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(report.to_json(), indent=2, default=str) + "\n")
+    path.write_text(json.dumps(report.to_json(), indent=2, default=_plain) + "\n")
+    if report.transcript:
+        transcript = path.with_suffix(".transcript.json")
+        transcript.write_text(json.dumps(report.transcript, indent=1, default=_plain) + "\n")
     return path
 
 

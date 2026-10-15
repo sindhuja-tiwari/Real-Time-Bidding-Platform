@@ -53,7 +53,38 @@ def _cmd_run(args: argparse.Namespace) -> int:
     return 0 if all(r["passed"] for r in results) else 1
 
 
-METHODS = {"fixed_workflow": "evidenceops.baselines.fixed_workflow"}
+def _fixed_workflow(run_dir: Path, args: argparse.Namespace):
+    from evidenceops.baselines import fixed_workflow
+
+    return fixed_workflow.investigate(run_dir)
+
+
+def _agent(run_dir: Path, args: argparse.Namespace):
+    from evidenceops.agent import claude, loop
+
+    model = claude.ClaudeModel(model=args.model, effort=args.effort)
+    return loop.investigate(run_dir, model, method="agent", max_tool_calls=args.max_tool_calls)
+
+
+def _agent_offline(run_dir: Path, args: argparse.Namespace):
+    from evidenceops.agent import loop, offline
+
+    return loop.investigate(run_dir, offline.OfflinePolicy(), method="agent_offline", max_tool_calls=args.max_tool_calls)
+
+
+def _log_only(run_dir: Path, args: argparse.Namespace):
+    from evidenceops.baselines import log_only
+
+    return log_only.investigate(run_dir, model=args.model, effort=args.effort)
+
+
+# Methods marked True call the Claude API and need ANTHROPIC_API_KEY.
+METHODS = {
+    "fixed_workflow": (_fixed_workflow, False),
+    "agent_offline": (_agent_offline, False),
+    "agent": (_agent, True),
+    "log_only": (_log_only, True),
+}
 
 
 def _run_dirs(paths: List[str]) -> List[Path]:
@@ -65,16 +96,15 @@ def _run_dirs(paths: List[str]) -> List[Path]:
 
 
 def _cmd_investigate(args: argparse.Namespace) -> int:
-    import importlib
-
     from evidenceops import investigation
 
-    module = importlib.import_module(METHODS[args.method])
+    run = METHODS[args.method][0]
     for run_dir in _run_dirs(args.runs):
-        report = module.investigate(run_dir)
+        report = run(run_dir, args)
         path = investigation.save(report, run_dir)
         top = "abstained: " + report.abstain_reason if report.abstained else report.hypotheses[0].category
-        print(f"{run_dir.name}: {top}  ({path})")
+        cost = f", ${report.cost_usd:.4f}" if report.cost_usd else ""
+        print(f"{run_dir.name}: {top}  [{report.tool_calls} tool calls{cost}]  ({path})", flush=True)
     return 0
 
 
@@ -118,7 +148,10 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     inv = sub.add_parser("investigate", help="run an investigation method on recorded runs")
     inv.add_argument("runs", nargs="*", help="run directories (default: all under evidenceops/runs)")
-    inv.add_argument("--method", choices=sorted(METHODS), default="fixed_workflow")
+    inv.add_argument("--method", choices=list(METHODS), default="fixed_workflow")
+    inv.add_argument("--model", default="claude-opus-5-5", help="Claude model for agent and log_only")
+    inv.add_argument("--effort", default="high", choices=["low", "medium", "high", "xhigh", "max"])
+    inv.add_argument("--max-tool-calls", type=int, default=20, help="tool budget for agent methods")
     inv.set_defaults(func=_cmd_investigate)
 
     ev = sub.add_parser("evaluate", help="grade saved investigations against ground truth")
