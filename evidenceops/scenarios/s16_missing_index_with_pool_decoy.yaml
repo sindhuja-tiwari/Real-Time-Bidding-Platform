@@ -1,0 +1,44 @@
+id: s16-missing-index-with-pool-resize
+title: A migration loses an index in the same deploy that resizes the pool
+
+report: >
+  Auction success rate dropped sharply shortly after the auction backend was
+  deployed this afternoon. Identify the likely cause, show the supporting
+  evidence, and test a remediation without touching the live system.
+
+setup:
+  history_auctions: 2000000
+
+traffic:
+  rps: 24
+  baseline_seconds: 40
+  incident_seconds: 60
+
+steps:
+  - at: 0
+    action: deploy
+    version: 1.6.1
+    migrations: [0004_auction_request_id_collation]
+    env:
+      DB_POOL_SIZE: "25"
+      DB_MAX_OVERFLOW: "5"
+
+ground_truth:
+  category: missing_index
+  component: auction.request_id index (dropped by migration 0004_auction_request_id_collation)
+  summary: >
+    The deploy resized the pool (20+10 to 25+5, the same total) and dropped
+    the index behind the idempotency lookup. Pool waits do climb, but only
+    because every connection is busy scanning the auction table.
+  causal_steps: [0]
+  decoy_steps: []
+  causal_settings: []
+  decoy_settings: [DB_POOL_SIZE, DB_MAX_OVERFLOW]
+  distinguishing_evidence:
+    - Postgres is busy, with every pooled connection running the same slow SELECT on auction
+    - sequential scans on auction read tens of millions of rows per second
+  remediation:
+    description: Roll back migration 0004_auction_request_id_collation.
+    changes:
+      - {kind: rollback_migration, migration: 0004_auction_request_id_collation}
+    expected_min_success_rate: 0.9

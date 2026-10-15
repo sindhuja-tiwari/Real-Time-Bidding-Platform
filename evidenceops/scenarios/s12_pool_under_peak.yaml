@@ -1,0 +1,42 @@
+id: s12-pool-too-small-for-peak
+title: A modest pool cut is fine at low traffic but not at today's rate
+
+report: >
+  Auction success rate dropped sharply shortly after the auction backend was
+  deployed this afternoon. Identify the likely cause, show the supporting
+  evidence, and test a remediation without touching the live system.
+
+traffic:
+  rps: 32
+  baseline_seconds: 40
+  incident_seconds: 60
+
+steps:
+  - at: 0
+    action: deploy
+    version: 1.3.3
+    env:
+      DB_POOL_SIZE: "3"
+      DB_MAX_OVERFLOW: "0"
+      REDIS_CACHE_TTL_SECONDS: "60"
+
+ground_truth:
+  category: db_pool_exhaustion
+  component: backend SQLAlchemy connection pool (DB_POOL_SIZE / DB_MAX_OVERFLOW)
+  summary: >
+    v1.3.3 cut the pool to 3 connections with no overflow. At ~100ms per
+    auction that serves about 25 auctions/s, below the 32/s arriving, so
+    requests queue for a connection and miss the 2s publisher timeout.
+  causal_steps: [0]
+  decoy_steps: []
+  causal_settings: [DB_POOL_SIZE, DB_MAX_OVERFLOW]
+  decoy_settings: [REDIS_CACHE_TTL_SECONDS]
+  distinguishing_evidence:
+    - db.pool.acquire waits climb into seconds while Postgres stays nearly idle
+    - DSP response times are unchanged
+  remediation:
+    description: Roll the pool settings back (20 + 10 overflow).
+    changes:
+      - {kind: rollback_setting, setting: DB_POOL_SIZE}
+      - {kind: rollback_setting, setting: DB_MAX_OVERFLOW}
+    expected_min_success_rate: 0.9

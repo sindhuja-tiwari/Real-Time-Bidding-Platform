@@ -101,14 +101,39 @@ class RunEvidence:
         with open(self.dir / "db" / "dsps.csv") as f:
             return list(csv.DictReader(f))
 
+    def samples(self, name: str) -> List[Dict[str, Any]]:
+        """A sampled query's rows over time: [{_ts, rows, error}], oldest first."""
+        cache = self.__dict__.setdefault("_samples", {})
+        if name not in cache:
+            path = self.dir / "db" / f"{name}.samples.jsonl"
+            out = []
+            for line in (path.read_text().splitlines() if path.exists() else []):
+                sample = json.loads(line)
+                rows = list(csv.DictReader(sample["csv"].splitlines())) if sample.get("csv") else []
+                out.append({"_ts": parse_ts(sample["sampled_at"]), "rows": rows, "error": sample.get("error")})
+            cache[name] = out
+        return cache[name]
+
     @cached_property
     def pg_samples(self) -> List[Dict[str, Any]]:
-        path = self.dir / "db" / "pg_stat_activity.samples.jsonl"
+        return self.samples("pg_stat_activity")
+
+    @cached_property
+    def indexes(self) -> List[Dict[str, Any]]:
+        path = self.dir / "db" / "indexes.csv"
+        if not path.exists():
+            return []
+        with open(path) as f:
+            return list(csv.DictReader(f))
+
+    @cached_property
+    def kafka_samples(self) -> List[Dict[str, Any]]:
+        """Consumer-group describe output over time: [{_ts, groups: {group: {...}}}]."""
+        path = self.dir / "kafka" / "consumer_groups.samples.jsonl"
         out = []
-        for line in path.read_text().splitlines():
+        for line in (path.read_text().splitlines() if path.exists() else []):
             sample = json.loads(line)
-            rows = list(csv.DictReader(sample.get("csv", "").splitlines())) if sample.get("csv") else []
-            out.append({"_ts": parse_ts(sample["sampled_at"]), "rows": rows, "error": sample.get("error")})
+            out.append({"_ts": parse_ts(sample["sampled_at"]), "groups": parse_consumer_groups(sample.get("text") or "")})
         return out
 
     @cached_property
@@ -175,6 +200,40 @@ def classify_log(msg: str) -> str:
     if exc:
         return f'exception:{exc["exc"]}: {exc["detail"][:60]}'
     return "other"
+
+
+def parse_consumer_groups(text: str) -> Dict[str, Dict[str, Any]]:
+    """Parse ``kafka-consumer-groups --describe --all-groups`` output.
+
+    Sums offsets and lag over a group's partitions. A group whose rows show
+    no consumer id has no live member: nothing is consuming it right now.
+    """
+    groups: Dict[str, Dict[str, Any]] = {}
+    header: List[str] = []
+    for raw in text.splitlines():
+        cols = raw.split()
+        if not cols:
+            continue
+        if cols[0] == "GROUP":
+            header = cols
+            continue
+        if not header or len(cols) < len(header):
+            continue
+        row = dict(zip(header, cols))
+        g = groups.setdefault(row["GROUP"], {"committed_offset": 0, "log_end_offset": 0, "lag": 0, "active_members": 0})
+        for key, col in (("committed_offset", "CURRENT-OFFSET"), ("log_end_offset", "LOG-END-OFFSET"), ("lag", "LAG")):
+            if row.get(col, "-").isdigit():
+                g[key] += int(row[col])
+        if row.get("CONSUMER-ID", "-") != "-":
+            g["active_members"] += 1
+    return groups
+
+
+_SQL_LITERAL = re.compile(r"'(?:[^']|'')*'|\b\d+(?:\.\d+)?\b")
+
+
+def normalize_sql(query: str) -> str:
+    return re.sub(r"\s+", " ", _SQL_LITERAL.sub("?", query)).strip()
 
 
 def _in(row_ts: float, start: Optional[float], end: Optional[float]) -> bool:
@@ -309,6 +368,150 @@ def db_connections(ev: RunEvidence, start: str, end: str) -> Dict[str, Any]:
     return {"window": [start, end], "samples": samples, "total_connections": _summary(totals)}
 
 
+def slow_queries(ev: RunEvidence, start: str, end: str, top: int = 8) -> Dict[str, Any]:
+    """Statements seen running in Postgres (sampled every ~5s), grouped by shape."""
+    s, e = parse_ts(start), parse_ts(end)
+    by_query: Dict[str, List[float]] = {}
+    samples = 0
+    for sample in ev.samples("active_queries"):
+        if not _in(sample["_ts"], s, e):
+            continue
+        samples += 1
+        for row in sample["rows"]:
+            by_query.setdefault(normalize_sql(row["query"]), []).append(float(row["running_ms"] or 0))
+    ranked = sorted(by_query.items(), key=lambda kv: -sum(kv[1]))[:top]
+    return {
+        "window": [start, end],
+        "samples": samples,
+        "queries": [
+            {"query": q, "seen_running": len(v), "running_ms": _summary(v), "avg_concurrent": round(len(v) / max(samples, 1), 2)}
+            for q, v in ranked
+        ],
+    }
+
+
+def table_scans(ev: RunEvidence, start: str, end: str) -> Dict[str, Any]:
+    """Per-table sequential vs index scans in a window (pg_stat_user_tables deltas)."""
+    s, e = parse_ts(start), parse_ts(end)
+    inside = [x for x in ev.samples("table_scans") if _in(x["_ts"], s, e) and x["rows"]]
+    if len(inside) < 2:
+        return {"window": [start, end], "tables": {}, "note": "fewer than two samples in this window"}
+    first, last = inside[0], inside[-1]
+    seconds = last["_ts"] - first["_ts"]
+    before = {r["relname"]: r for r in first["rows"]}
+    tables = {}
+    for row in last["rows"]:
+        prev = before.get(row["relname"])
+        if not prev:
+            continue
+        delta = {k: int(row[k]) - int(prev[k]) for k in ("seq_scan", "seq_tup_read", "idx_scan")}
+        tables[row["relname"]] = {
+            **delta,
+            "seq_scans_per_s": round(delta["seq_scan"] / seconds, 2),
+            "rows_read_by_seq_scans_per_s": round(delta["seq_tup_read"] / seconds),
+            "live_rows": int(row["n_live_tup"]),
+        }
+    busy = dict(sorted(tables.items(), key=lambda kv: -(kv[1]["seq_tup_read"] + kv[1]["idx_scan"])))
+    return {"window": [iso(first["_ts"]), iso(last["_ts"])], "seconds": round(seconds, 1), "tables": busy}
+
+
+def db_indexes(ev: RunEvidence, table: Optional[str] = None) -> Dict[str, Any]:
+    """Indexes and unique constraints on the platform's tables, as of the end of the window."""
+    rows = [r for r in ev.indexes if table is None or r["tablename"] == table]
+    by_table: Dict[str, List[str]] = {}
+    for r in rows:
+        by_table.setdefault(r["tablename"], []).append(r["indexdef"])
+    return {"table": table, "captured": "end of telemetry window", "indexes": by_table}
+
+
+def consumer_lag(ev: RunEvidence, start: str, end: str) -> Dict[str, Any]:
+    """Kafka consumer groups over time: committed offset, lag and live members (~10s samples)."""
+    s, e = parse_ts(start), parse_ts(end)
+    series: Dict[str, List[Dict[str, Any]]] = {}
+    for sample in ev.kafka_samples:
+        if _in(sample["_ts"], s, e):
+            for group, g in sample["groups"].items():
+                series.setdefault(group, []).append({"at": iso(sample["_ts"]), **g})
+    out = {}
+    for group, points in sorted(series.items()):
+        first, last = points[0], points[-1]
+        # The earliest sample from which the committed offset never moved
+        # again while new messages kept arriving: the group is stuck there.
+        stalled_since = None
+        for p in reversed(points[:-1]):
+            if p["committed_offset"] != last["committed_offset"]:
+                break
+            if last["log_end_offset"] > p["log_end_offset"]:
+                stalled_since = p["at"]
+        step = max(1, len(points) // 12)
+        out[group] = {
+            "committed_advanced_by": last["committed_offset"] - first["committed_offset"],
+            # A committed offset that moves backwards means the group was rewound.
+            "largest_committed_rewind": max(
+                [0] + [a["committed_offset"] - b["committed_offset"] for a, b in zip(points, points[1:])]
+            ),
+            "log_end_advanced_by": last["log_end_offset"] - first["log_end_offset"],
+            "lag_first": first["lag"],
+            "lag_last": last["lag"],
+            "lag_max": max(p["lag"] for p in points),
+            "stalled_since": stalled_since,
+            "samples_without_live_member": sum(1 for p in points if not p["active_members"]),
+            "samples": len(points),
+            "series": points[::step],
+        }
+    return {"window": [start, end], "groups": out}
+
+
+def analytics_consistency(ev: RunEvidence, start: str, end: str) -> Dict[str, Any]:
+    """Finished auctions vs auctions counted by the analytics rollup, sampled every ~5s."""
+    s, e = parse_ts(start), parse_ts(end)
+    points = []
+    for sample in ev.samples("analytics_consistency"):
+        if _in(sample["_ts"], s, e) and sample["rows"]:
+            row = sample["rows"][0]
+            finished, rolled = int(row["finished_auctions"]), int(row["rolled_up"])
+            points.append({"at": iso(sample["_ts"]), "finished_auctions": finished, "rolled_up": rolled, "not_yet_counted": finished - rolled})
+    step = max(1, len(points) // 15)
+    gaps = [p["not_yet_counted"] for p in points]
+    return {
+        "window": [start, end],
+        "note": "not_yet_counted below 0 means the rollup counted more auctions than finished",
+        "not_yet_counted": {"first": gaps[0] if gaps else None, "last": gaps[-1] if gaps else None,
+                            "min": min(gaps) if gaps else None, "max": max(gaps) if gaps else None},
+        "series": points[::step],
+    }
+
+
+def repeated_values(ev: RunEvidence, service: str, event: str, field: str, start: str, end: str) -> Dict[str, Any]:
+    """For one structured log event, how often each value of a field repeats (e.g. an id processed twice)."""
+    s, e = parse_ts(start), parse_ts(end)
+    counts: Dict[str, int] = {}
+    first_line: Dict[str, str] = {}
+    for line in ev.log_lines(service):
+        if not _in(line["_ts"], s, e) or not line["msg"].lstrip().startswith("{"):
+            continue
+        try:
+            data = json.loads(line["msg"])
+        except ValueError:
+            continue
+        if data.get("event") != event or field not in data:
+            continue
+        value = str(data[field])
+        counts[value] = counts.get(value, 0) + 1
+        first_line.setdefault(value, f'logs/{service}.log:{line["line"]}')
+    repeated = {v: c for v, c in counts.items() if c > 1}
+    histogram: Dict[str, int] = {}
+    for c in counts.values():
+        histogram[str(c)] = histogram.get(str(c), 0) + 1
+    examples = sorted(repeated.items(), key=lambda kv: -kv[1])[:5]
+    return {
+        "service": service, "event": event, "field": field, "window": [start, end],
+        "events": sum(counts.values()), "distinct_values": len(counts), "values_seen_more_than_once": len(repeated),
+        "times_seen_histogram": histogram,
+        "examples": [{"value": v, "times": c, "first_seen": first_line[v]} for v, c in examples],
+    }
+
+
 Tool = Callable[..., Dict[str, Any]]
 
 TOOLS: Dict[str, Dict[str, Any]] = {
@@ -326,6 +529,15 @@ TOOLS: Dict[str, Dict[str, Any]] = {
         "params": {"service": list(LOG_SERVICES), "start": "iso", "end": "iso", "contains": "substring (optional)"},
     },
     "db_connections": {"fn": db_connections, "params": {"start": "iso", "end": "iso"}},
+    "slow_queries": {"fn": slow_queries, "params": {"start": "iso", "end": "iso"}},
+    "table_scans": {"fn": table_scans, "params": {"start": "iso", "end": "iso"}},
+    "db_indexes": {"fn": db_indexes, "params": {"table": "table name (optional)"}},
+    "consumer_lag": {"fn": consumer_lag, "params": {"start": "iso", "end": "iso"}},
+    "analytics_consistency": {"fn": analytics_consistency, "params": {"start": "iso", "end": "iso"}},
+    "repeated_values": {
+        "fn": repeated_values,
+        "params": {"service": list(LOG_SERVICES), "event": "log event name", "field": "field", "start": "iso", "end": "iso"},
+    },
 }
 
 

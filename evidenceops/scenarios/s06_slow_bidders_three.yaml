@@ -1,0 +1,50 @@
+id: s06-three-bidders-slow-after-cache-deploy
+title: Three bidders slow past their timeout just after a cache-tuning deploy
+
+report: >
+  Auction success rate dropped sharply shortly after the auction backend was
+  deployed this afternoon. Identify the likely cause, show the supporting
+  evidence, and test a remediation without touching the live system.
+
+traffic:
+  rps: 20
+  baseline_seconds: 40
+  incident_seconds: 60
+
+steps:
+  # 0: decoy deploy touching only cache and retry tuning
+  - at: 0
+    action: deploy
+    version: 1.1.1
+    env:
+      REDIS_CACHE_TTL_SECONDS: "30"
+      EVENT_RETRY_BASE_SECONDS: "0.5"
+  # 1: three bidders degrade together
+  - at: 15
+    action: dsp_config
+    dsps: [dsp-a, dsp-b, dsp-c]
+    set:
+      latency_ms: 160
+      latency_jitter_ms: 30
+
+ground_truth:
+  category: external_dsp_latency
+  component: external DSPs DSP-A, DSP-B, DSP-C
+  summary: >
+    DSP-A, DSP-B and DSP-C started answering in 130-190ms, past their 100ms
+    per-DSP timeout. Their bids time out at the full budget while the other
+    two bidders answer as before. The deploy only changed a cache TTL and the
+    worker's retry backoff, neither of which touches the bid path.
+  causal_steps: [1]
+  decoy_steps: [0]
+  causal_settings: []
+  decoy_settings: [REDIS_CACHE_TTL_SECONDS, EVENT_RETRY_BASE_SECONDS]
+  distinguishing_evidence:
+    - TIMEOUTs on the three DSPs are recorded at ~100ms, their own per-DSP timeout, not cut short by the global deadline
+    - the deploy changed no timeout or pool setting
+  remediation:
+    description: Raise the three DSPs' timeouts and the global deadline to 200ms (or drop them from the fan-out).
+    changes:
+      - {kind: deploy_setting, setting: AUCTION_GLOBAL_TIMEOUT_MS, value: "200"}
+      - {kind: dsp_timeout_ms, dsps: [DSP-A, DSP-B, DSP-C], value: "200"}
+    expected_min_success_rate: 0.9

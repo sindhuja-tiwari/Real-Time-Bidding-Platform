@@ -11,9 +11,13 @@ hand-written thresholds, the way an on-call runbook would:
 4. Score each root-cause category it has a rule for; abstain when the best
    score is weak or two causes score about the same.
 
+Analytics alerts get their own short runbook: deployments, consumer lag,
+worker log events, and a rule for a worker that keeps failing on messages.
+
 It cannot adapt: it never asks a follow-up question of the data, and it has
-no rules for categories outside the three it knows. That is the point of the
-comparison: does an adaptive investigator do better than this?
+no rules for categories outside the four it knows (no missing-index or
+duplicate-delivery rule). That is the point of the comparison: does an
+adaptive investigator do better than this?
 """
 from __future__ import annotations
 
@@ -37,6 +41,7 @@ POOL_WAIT_FLOOR_MS = 200
 POOL_WAIT_RATIO = 10
 ABSTAIN_BELOW = 0.5
 ABSTAIN_MARGIN = 0.1
+ANALYTICS_DRIFT = 100          # rollup this far from the auction table counts as drifting
 
 
 def _find_onset(buckets: List[Dict[str, Any]]) -> Optional[Tuple[str, float]]:
@@ -64,6 +69,47 @@ def _timeout_profile(bids: Dict[str, Any], chronic: set) -> Tuple[float, Optiona
     return (statistics.mean(shares) if shares else 0.0), (statistics.median(times) if times else None)
 
 
+def _analytics(store: EvidenceStore, alert: Dict[str, Any], started: float) -> Report:
+    incident_id = store.ev.incident["incident_id"]
+    sign = 1 if alert["metric"] == "analytics_backlog" else -1
+    onset_iso = next((b["sampled_at"] for b in alert["buckets"] if sign * b["not_yet_counted"] > ANALYTICS_DRIFT), None)
+    start_iso, end_iso = alert["telemetry_window"]
+    deploys = store.call("list_deployments")
+    lag = store.call("consumer_lag", start=start_iso, end=end_iso)
+    logs = store.call("log_events", service="worker", start=onset_iso or start_iso, end=end_iso)
+    hypotheses: List[Hypothesis] = []
+    if onset_iso is not None:
+        onset_ts = parse_ts(onset_iso)
+        suspects = [
+            d for d in deploys["deployments"]
+            if d.get("from_version") and onset_ts - DEPLOY_LOOKBACK_S <= parse_ts(d["started_at"]) <= onset_ts + 10
+        ]
+        failures = sum(
+            e["count"] for e in logs["events"]
+            if e["event"].startswith("exception:") or "consumer_retry" in e["event"] or "max_retries" in e["event"]
+        )
+        lagging = [g for g, x in lag["groups"].items() if x["lag_last"] > ANALYTICS_DRIFT]
+        if failures and lagging:
+            hypotheses.append(Hypothesis(
+                category="poison_message", confidence=0.7,
+                statement=f"{failures} worker exceptions/retries after the drift began while {', '.join(lagging)} fell behind",
+                supporting=[logs["evidence_id"], lag["evidence_id"]],
+            ))
+        if suspects:
+            hypotheses.append(Hypothesis(
+                category="config_regression", confidence=0.3,
+                statement=f"deploy {suspects[-1]['to_version']} landed shortly before the drift",
+                supporting=[deploys["evidence_id"]],
+            ))
+    reason = ""
+    if not hypotheses or hypotheses[0].confidence < ABSTAIN_BELOW:
+        reason = "no rule matched strongly enough"
+    return Report(
+        method=METHOD, incident_id=incident_id, hypotheses=hypotheses, abstained=bool(reason), abstain_reason=reason,
+        evidence=store.items, tool_calls=store.calls, elapsed_seconds=round(time.perf_counter() - started, 3),
+    )
+
+
 def investigate(run_dir: Path) -> Report:
     started = time.perf_counter()
     ev = RunEvidence(Path(run_dir) / "observed")
@@ -71,6 +117,8 @@ def investigate(run_dir: Path) -> Report:
     incident_id = ev.incident["incident_id"]
 
     alert = store.call("alert_timeline")
+    if alert["metric"] != "auction_success_rate":
+        return _analytics(store, alert, started)
     onset = _find_onset(alert["buckets"])
     if onset is None:
         return Report(

@@ -1,0 +1,47 @@
+id: s22-slow-bidders-after-pool-resize
+title: Bidders slow down right after a deploy resized the DB pool
+
+report: >
+  Auction success rate dropped sharply shortly after the auction backend was
+  deployed this afternoon. Identify the likely cause, show the supporting
+  evidence, and test a remediation without touching the live system.
+
+traffic:
+  rps: 20
+  baseline_seconds: 40
+  incident_seconds: 60
+
+steps:
+  - at: 0
+    action: deploy
+    version: 1.3.6
+    env:
+      DB_POOL_SIZE: "15"
+      DB_MAX_OVERFLOW: "15"
+  - at: 10
+    action: dsp_config
+    dsps: [dsp-b, dsp-c, dsp-d, dsp-e]
+    set:
+      latency_ms: 140
+      latency_jitter_ms: 20
+
+ground_truth:
+  category: external_dsp_latency
+  component: external DSPs DSP-B, DSP-C, DSP-D, DSP-E
+  summary: >
+    The deploy moved pool capacity from 20+10 to 15+15, the same total, and
+    the platform stayed healthy. Ten seconds later four bidders slowed past
+    their 100ms timeout.
+  causal_steps: [1]
+  decoy_steps: [0]
+  causal_settings: []
+  decoy_settings: [DB_POOL_SIZE, DB_MAX_OVERFLOW]
+  distinguishing_evidence:
+    - pool acquire waits stay near zero
+    - TIMEOUTs land at each DSP's own 100ms budget
+  remediation:
+    description: Raise the slowed DSPs' timeouts and the global deadline to 200ms.
+    changes:
+      - {kind: deploy_setting, setting: AUCTION_GLOBAL_TIMEOUT_MS, value: "200"}
+      - {kind: dsp_timeout_ms, dsps: [DSP-B, DSP-C, DSP-D, DSP-E], value: "200"}
+    expected_min_success_rate: 0.9

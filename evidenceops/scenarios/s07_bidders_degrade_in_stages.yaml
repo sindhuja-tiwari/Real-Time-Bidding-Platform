@@ -1,0 +1,49 @@
+id: s07-bidders-degrade-in-stages
+title: Every bidder degrades in two stages with no deploy at all
+
+report: >
+  Auction success rate dropped sharply shortly after the auction backend was
+  deployed this afternoon. Identify the likely cause, show the supporting
+  evidence, and test a remediation without touching the live system.
+
+traffic:
+  rps: 20
+  baseline_seconds: 40
+  incident_seconds: 60
+
+steps:
+  # 0: first a mild slowdown that still fits the budget
+  - at: 0
+    action: dsp_config
+    dsps: [dsp-a, dsp-b, dsp-c, dsp-d, dsp-e]
+    set:
+      latency_ms: 80
+      latency_jitter_ms: 10
+  # 1: then past the budget
+  - at: 15
+    action: dsp_config
+    dsps: [dsp-a, dsp-b, dsp-c, dsp-d, dsp-e]
+    set:
+      latency_ms: 130
+      latency_jitter_ms: 20
+
+ground_truth:
+  category: external_dsp_latency
+  component: external DSPs DSP-A to DSP-E (shared upstream)
+  summary: >
+    All five bidders slowed first to ~80ms, still inside their 100ms budget,
+    then to ~130ms, past it. No deploy happened; every bid times out at the
+    per-DSP budget and auctions end NO_BID.
+  causal_steps: [0, 1]
+  decoy_steps: []
+  causal_settings: []
+  decoy_settings: []
+  distinguishing_evidence:
+    - no deploy in the window
+    - answered bids before the onset already took longer than usual, then every DSP times out at its own 100ms budget
+  remediation:
+    description: Raise per-DSP timeouts and the global deadline to 200ms while the upstream is degraded.
+    changes:
+      - {kind: deploy_setting, setting: AUCTION_GLOBAL_TIMEOUT_MS, value: "200"}
+      - {kind: dsp_timeout_ms, dsps: [DSP-A, DSP-B, DSP-C, DSP-D, DSP-E], value: "200"}
+    expected_min_success_rate: 0.9

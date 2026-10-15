@@ -1,0 +1,53 @@
+id: s18-poison-message-after-worker-deploy
+title: A malformed event arrives just after a deploy restarts the worker
+
+alert: analytics_backlog
+
+report: >
+  The analytics dashboard stopped moving: auction counts per minute are
+  flat even though publishers say traffic is normal. Identify the likely
+  cause, show the supporting evidence, and test a remediation without
+  touching the live system.
+
+traffic:
+  rps: 20
+  baseline_seconds: 40
+  incident_seconds: 60
+
+steps:
+  # 0: a routine deploy that restarts backend and worker
+  - at: 0
+    action: deploy
+    version: 1.7.0
+    env:
+      RATE_LIMIT_ADMIN_PER_MIN: "240"
+      REDIS_CACHE_TTL_SECONDS: "45"
+  # 1: then the truncated message
+  - at: 12
+    action: kafka_publish
+    template: truncated_json
+    count: 1
+
+ground_truth:
+  category: poison_message
+  component: auction-events topic / worker consumers (message that fails deserialization)
+  summary: >
+    The deploy restarted the worker cleanly and it caught up. Twelve seconds
+    later a truncated message arrived; the consumers fail to decode it outside
+    the retry path, the worker dies, restarts, and dies again on the same
+    message. The deploy only changed an admin rate limit and a cache TTL.
+  causal_steps: [1]
+  decoy_steps: [0]
+  causal_settings: []
+  decoy_settings: [RATE_LIMIT_ADMIN_PER_MIN, REDIS_CACHE_TTL_SECONDS]
+  distinguishing_evidence:
+    - repeated JSONDecodeError tracebacks and worker restarts after the deploy had already settled
+    - the deploy changed no worker setting
+  remediation:
+    description: Skip the undecodable message.
+    changes:
+      - {kind: skip_stuck_message, groups: [analytics-consumer, audit-consumer, budget-consumer]}
+    expected_min_success_rate: 0.9
+
+verify:
+  min_success_rate_drop: 0

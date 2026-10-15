@@ -15,9 +15,11 @@ def test_shipped_scenarios_are_valid_and_unique():
         assert s.ground_truth.remediation.get("expected_min_success_rate")
 
 
-def test_shipped_scenarios_share_one_report_so_the_cause_is_not_given_away():
-    reports = {s.report for s in load_all()}
-    assert len(reports) == 1
+def test_shipped_scenarios_share_one_report_per_alert_so_the_cause_is_not_given_away():
+    reports = {}
+    for s in load_all():
+        reports.setdefault(s.alert, set()).add(s.report)
+    assert all(len(r) == 1 for r in reports.values()), reports
 
 
 MINIMAL = {

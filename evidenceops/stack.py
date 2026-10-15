@@ -66,7 +66,7 @@ SAMPLED_QUERIES: Dict[str, str] = {
     # Statements running right now, with how long each has been running.
     "active_queries": (
         "SELECT round(extract(epoch FROM now() - query_start) * 1000) AS running_ms, "
-        "regexp_replace(left(query, 200), '\\s+', ' ', 'g') AS query "
+        "regexp_replace(left(query, 400), '\\s+', ' ', 'g') AS query "
         "FROM pg_stat_activity WHERE datname = 'rtb' AND state = 'active' AND pid <> pg_backend_pid()"
     ),
     # Cumulative scan counters per table; differences between samples give scan rates.
@@ -229,16 +229,32 @@ class Stack:
             timeout=120, input_text="\n".join(lines) + "\n",
         )
 
+    def _reset_offsets(self, group: str, *how: str, wait_seconds: float = 60) -> None:
+        """Reset a stopped group's offsets, waiting for its old members to time out.
+
+        A worker that crashed rather than shut down leaves its members in the
+        group until the session times out, and Kafka refuses resets until then.
+        """
+        deadline = time.monotonic() + wait_seconds
+        while True:
+            proc = self._run(
+                "exec", "-T", "kafka", f"{KAFKA_BIN}/kafka-consumer-groups.sh",
+                "--bootstrap-server", "localhost:9092", "--group", group, "--topic", KAFKA_TOPIC,
+                "--reset-offsets", *how, "--execute",
+                timeout=120, check=False,
+            )
+            output = proc.stdout + proc.stderr
+            if proc.returncode == 0 and "Error" not in output:
+                return
+            if time.monotonic() > deadline:
+                raise StackError(f"could not reset offsets for {group}:\n{output[-1000:]}")
+            time.sleep(3)
+
     def kafka_rewind(self, group: str, to_datetime: str) -> None:
         """Stop the worker, move a group's offsets back to a time, start it again."""
         self._run("stop", "-t", "5", "worker", timeout=120)
         try:
-            self._run(
-                "exec", "-T", "kafka", f"{KAFKA_BIN}/kafka-consumer-groups.sh",
-                "--bootstrap-server", "localhost:9092", "--group", group, "--topic", KAFKA_TOPIC,
-                "--reset-offsets", "--to-datetime", to_datetime, "--execute",
-                timeout=120,
-            )
+            self._reset_offsets(group, "--to-datetime", to_datetime)
         finally:
             self._run("start", "worker", timeout=120)
 
@@ -247,12 +263,7 @@ class Stack:
         self._run("stop", "-t", "5", "worker", timeout=120)
         try:
             for group in groups:
-                self._run(
-                    "exec", "-T", "kafka", f"{KAFKA_BIN}/kafka-consumer-groups.sh",
-                    "--bootstrap-server", "localhost:9092", "--group", group, "--topic", KAFKA_TOPIC,
-                    "--reset-offsets", "--shift-by", "1", "--execute",
-                    timeout=120,
-                )
+                self._reset_offsets(group, "--shift-by", "1")
         finally:
             self._run("start", "worker", timeout=120)
 
