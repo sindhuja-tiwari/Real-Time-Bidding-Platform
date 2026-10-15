@@ -39,9 +39,10 @@ DSP_SIM_URL = os.getenv("EVIDENCEOPS_DSP_SIM_URL", "http://localhost:9000")
 # Exported per run for investigators. Each runs inside a READ ONLY
 # transaction (see export_query).
 READ_QUERIES: Dict[str, str] = {
+    # Only this run's auctions: missing-index scenarios add millions of old rows.
     "auctions": (
         "SELECT id, request_id, status, duration_ms, started_at, completed_at, winning_bid_id "
-        "FROM auction ORDER BY started_at"
+        "FROM auction WHERE started_at > now() - interval '1 hour' ORDER BY started_at"
     ),
     "bids": (
         "SELECT b.id, b.auction_id, d.name AS dsp_name, b.campaign_id, b.amount, "
@@ -52,6 +53,7 @@ READ_QUERIES: Dict[str, str] = {
     "campaigns": (
         "SELECT id, name, status, daily_budget, remaining_budget, bid_floor FROM campaign ORDER BY name"
     ),
+    "indexes": "SELECT tablename, indexname, indexdef FROM pg_indexes WHERE schemaname = 'public' ORDER BY 1, 2",
 }
 
 # Sampled repeatedly during a run (point-in-time views are useless after it).
@@ -61,7 +63,28 @@ SAMPLED_QUERIES: Dict[str, str] = {
         "FROM pg_stat_activity WHERE datname = 'rtb' AND pid <> pg_backend_pid() "
         "GROUP BY 1, 2, 3 ORDER BY 4 DESC"
     ),
+    # Statements running right now, with how long each has been running.
+    "active_queries": (
+        "SELECT round(extract(epoch FROM now() - query_start) * 1000) AS running_ms, "
+        "regexp_replace(left(query, 200), '\\s+', ' ', 'g') AS query "
+        "FROM pg_stat_activity WHERE datname = 'rtb' AND state = 'active' AND pid <> pg_backend_pid()"
+    ),
+    # Cumulative scan counters per table; differences between samples give scan rates.
+    "table_scans": (
+        "SELECT relname, seq_scan, seq_tup_read, coalesce(idx_scan, 0) AS idx_scan, n_live_tup "
+        "FROM pg_stat_user_tables ORDER BY relname"
+    ),
+    # Finished auctions vs auctions counted by the analytics rollup.
+    "analytics_consistency": (
+        "SELECT (SELECT count(*) FROM auction WHERE status IN ('COMPLETED', 'NO_BID') "
+        "AND started_at > now() - interval '1 hour') AS finished_auctions, "
+        "(SELECT coalesce(sum(total_auctions), 0) FROM auction_minute_rollup) AS rolled_up"
+    ),
 }
+
+KAFKA_BIN = "/opt/kafka/bin"
+KAFKA_TOPIC = "auction-events"
+WORKER_GROUPS = ["analytics-consumer", "audit-consumer", "budget-consumer"]
 
 
 class StackError(RuntimeError):
@@ -87,9 +110,11 @@ class Stack:
             argv += ["-f", str(f)]
         return argv + list(args)
 
-    def _run(self, *args: str, timeout: float = 600, check: bool = True) -> subprocess.CompletedProcess:
+    def _run(
+        self, *args: str, timeout: float = 600, check: bool = True, input_text: Optional[str] = None
+    ) -> subprocess.CompletedProcess:
         proc = subprocess.run(
-            self._argv(*args), cwd=REPO_ROOT, capture_output=True, text=True, timeout=timeout
+            self._argv(*args), cwd=REPO_ROOT, capture_output=True, text=True, timeout=timeout, input=input_text
         )
         if check and proc.returncode != 0:
             raise StackError(f"docker compose {' '.join(args)} failed:\n{proc.stderr[-2000:]}")
@@ -173,6 +198,78 @@ class Stack:
             timeout=120,
         )
         return proc.stdout
+
+
+    # ------------------------------------------------------------ fault actions
+    # Each takes only values chosen from allowlists in faults.py.
+
+    def write_sql(self, sql: str, timeout: float = 600) -> None:
+        """Run fixed SQL from faults.py (migrations, history seeding)."""
+        self._run(
+            "exec", "-T", "postgres", "psql", "-U", "rtb", "-d", "rtb", "-v", "ON_ERROR_STOP=1", "-c", sql,
+            timeout=timeout,
+        )
+
+    def seed_history(self, auctions: int) -> None:
+        """Write old, completed auctions so the auction table is production-sized."""
+        self.write_sql(
+            "INSERT INTO auction (request_id, ad_slot_id, started_at, completed_at, duration_ms, status) "
+            "SELECT 'hist-' || g, (SELECT id FROM ad_slot ORDER BY id LIMIT 1), "
+            "now() - interval '30 days' + g * interval '1 second', "
+            "now() - interval '30 days' + g * interval '1 second' + interval '110 milliseconds', 110, 'COMPLETED' "
+            f"FROM generate_series(1, {int(auctions)}) g",
+            timeout=1800,
+        )
+        self.write_sql("VACUUM ANALYZE auction", timeout=1800)
+
+    def kafka_produce(self, lines: List[str]) -> None:
+        self._run(
+            "exec", "-T", "kafka", f"{KAFKA_BIN}/kafka-console-producer.sh",
+            "--bootstrap-server", "localhost:9092", "--topic", KAFKA_TOPIC,
+            timeout=120, input_text="\n".join(lines) + "\n",
+        )
+
+    def kafka_rewind(self, group: str, to_datetime: str) -> None:
+        """Stop the worker, move a group's offsets back to a time, start it again."""
+        self._run("stop", "-t", "5", "worker", timeout=120)
+        try:
+            self._run(
+                "exec", "-T", "kafka", f"{KAFKA_BIN}/kafka-consumer-groups.sh",
+                "--bootstrap-server", "localhost:9092", "--group", group, "--topic", KAFKA_TOPIC,
+                "--reset-offsets", "--to-datetime", to_datetime, "--execute",
+                timeout=120,
+            )
+        finally:
+            self._run("start", "worker", timeout=120)
+
+    def kafka_skip_one(self, groups: List[str]) -> None:
+        """Remediation: move each group one message past where it is stuck."""
+        self._run("stop", "-t", "5", "worker", timeout=120)
+        try:
+            for group in groups:
+                self._run(
+                    "exec", "-T", "kafka", f"{KAFKA_BIN}/kafka-consumer-groups.sh",
+                    "--bootstrap-server", "localhost:9092", "--group", group, "--topic", KAFKA_TOPIC,
+                    "--reset-offsets", "--shift-by", "1", "--execute",
+                    timeout=120,
+                )
+        finally:
+            self._run("start", "worker", timeout=120)
+
+    def kafka_lag(self) -> str:
+        """Consumer group offsets and lag, as kafka-consumer-groups prints them."""
+        return self._run(
+            "exec", "-T", "kafka", f"{KAFKA_BIN}/kafka-consumer-groups.sh",
+            "--bootstrap-server", "localhost:9092", "--describe", "--all-groups",
+            timeout=60, check=False,
+        ).stdout
+
+
+def csv_rows(text: str) -> List[Dict[str, str]]:
+    import csv
+    import io
+
+    return list(csv.DictReader(io.StringIO(text)))
 
 
 def dsp_configs() -> Dict[str, dict]:

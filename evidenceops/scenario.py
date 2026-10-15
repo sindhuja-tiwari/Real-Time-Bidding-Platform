@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
-from evidenceops.faults import DeployStep, Step, parse_step
+from evidenceops.faults import MAX_HISTORY_AUCTIONS, DeployStep, Step, parse_step
 from evidenceops.paths import SCENARIO_DIR
 
 # Root-cause taxonomy shared by scenarios, graders, and (later) the agent's
@@ -77,6 +77,16 @@ class Verify:
     # Seconds after the last causal step finishes before the incident window
     # starts, so a deploy restart blip is not counted as the incident itself.
     settle_seconds: int = 5
+    # Analytics alerts: how far finished auctions and the analytics rollup
+    # must drift apart (in auctions) to count as an incident.
+    min_analytics_gap: int = 300
+
+
+# What paged the on-call engineer.
+#   auction_success_rate: share of auction requests that complete (default)
+#   analytics_backlog:    finished auctions not yet counted by analytics
+#   analytics_overcount:  analytics counting more auctions than ran
+ALERTS = ("auction_success_rate", "analytics_backlog", "analytics_overcount")
 
 
 @dataclass
@@ -89,6 +99,8 @@ class Scenario:
     ground_truth: GroundTruth
     verify: Verify
     ambiguous: bool = False
+    alert: str = "auction_success_rate"
+    history_auctions: int = 0
     path: Optional[Path] = None
     raw: Dict[str, Any] = field(default_factory=dict)
 
@@ -141,6 +153,12 @@ def parse_scenario(data: Dict[str, Any], path: Optional[Path] = None) -> Scenari
             raise ScenarioError(f"{where}: setting '{key}' is not changed by any deploy step")
 
     ambiguous = bool(data.get("ambiguous", False))
+    alert = str(data.get("alert", "auction_success_rate"))
+    if alert not in ALERTS:
+        raise ScenarioError(f"{where}: alert must be one of {ALERTS}")
+    history = int((data.get("setup") or {}).get("history_auctions", 0))
+    if not 0 <= history <= MAX_HISTORY_AUCTIONS:
+        raise ScenarioError(f"{where}: setup.history_auctions must be 0..{MAX_HISTORY_AUCTIONS}")
     if ambiguous and len(gt.candidates) < 2:
         raise ScenarioError(f"{where}: an ambiguous scenario must list at least two ground_truth.candidates")
     for c in gt.candidates:
@@ -156,6 +174,8 @@ def parse_scenario(data: Dict[str, Any], path: Optional[Path] = None) -> Scenari
         ground_truth=gt,
         verify=Verify(**(data.get("verify") or {})),
         ambiguous=ambiguous,
+        alert=alert,
+        history_auctions=history,
         path=path,
         raw=data,
     )
