@@ -10,7 +10,7 @@ The target question:
 > show the supporting evidence, and test a remediation without touching the
 > live system.
 
-This directory currently holds **milestones 1 to 3**:
+This directory currently holds **milestones 1 to 4**:
 
 - a reproducible incident harness with three injected failures and recorded
   ground truth,
@@ -18,11 +18,12 @@ This directory currently holds **milestones 1 to 3**:
 - read-only diagnostic tools over a recorded run,
 - a tool-using investigator (Claude) that has to cite evidence for every claim,
 - two baselines to compare it with: a fixed diagnostic workflow and a
-  log-only prompt, and
+  log-only prompt,
+- approval-gated remediation experiments in a disposable copy of the
+  platform, and an ambiguous scenario where abstaining is the right answer,
 - a grader that scores any investigation method against ground truth.
 
-Remediation experiments and the larger scenario suite come next (see
-[Roadmap](#roadmap)).
+The larger scenario suite comes next (see [Roadmap](#roadmap)).
 
 ## Quick start
 
@@ -40,6 +41,8 @@ python -m evidenceops investigate --method agent_offline   # no API key needed
 python -m evidenceops investigate --method agent           # needs ANTHROPIC_API_KEY
 python -m evidenceops investigate --method log_only        # needs ANTHROPIC_API_KEY
 python -m evidenceops investigate --method agent --provider gemini   # free tier, GEMINI_API_KEY
+python -m evidenceops remediate --method agent_offline   # propose fixes; nothing runs yet
+python -m evidenceops remediate --method agent_offline --approve "Your Name"   # test them in a sandbox
 python -m evidenceops evaluate      # grade saved investigations against ground truth
 pytest evidenceops/tests            # unit tests, no Docker needed
 ```
@@ -307,6 +310,83 @@ answers in the same report schema through structured outputs, citing each
 service's log excerpt as one evidence id. It shows what the tools and traces
 add over the logs alone.
 
+## Remediation experiments
+
+`remediate` turns an investigation into a proposed fix, and tests it only
+after a person approves it.
+
+**What can be proposed** (`remediation.py`). A proposal is a list of typed
+changes, and only three kinds exist:
+
+- `deploy_setting`: set an allowlisted setting to a value inside fixed bounds.
+- `rollback_setting`: restore a setting to its value before the last deploy
+  that changed it, looked up in the run's deployment log.
+- `dsp_timeout_ms`: set the per-DSP timeout on named DSP rows, through a new
+  admin `PATCH /api/v1/dsps/{id}` endpoint.
+
+Anything else, including a shell command, a setting outside the allowlist, or
+a value out of bounds, fails to parse and is rejected. Nothing tries to
+"clean it up" and run it anyway.
+
+**Where proposals come from.** The investigator may include a remediation in
+its report, and it is validated with the report. For methods that don't,
+including the baselines, a rule planner derives one from the top hypothesis:
+
+- a deploy-borne cause gets a rollback of the matching settings, never of the
+  harmless decoy settings in the same deploy;
+- slow bidders get longer per-DSP timeouts and a longer deadline.
+
+When a report abstained, the proposal is marked as an **experiment** rather
+than a fix. It rolls back the suspect deploy's risky settings, so the result
+tells you whether that deploy was a sufficient cause, which is the thing the
+telemetry could not show.
+
+**The approval gate.** Without `--approve`, `remediate` only writes
+`remediation/<method>.proposal.json` with status `awaiting_approval` and
+prints it. `--approve "Name"` then:
+
+1. re-parses that exact file,
+2. checks its digest, so a proposal edited after it was made is refused,
+3. records who approved it and when, and only then
+4. runs it.
+
+**The sandbox** (`sandbox.py`). An approved remediation runs in a freshly built
+copy of the platform with wiped volumes. The copy replays the original
+incident's scenario step for step, applies the changes once the incident is
+in full swing, and keeps traffic flowing for 45s more. The verdict needs both
+of these in the same experiment:
+
+- the incident reproduced, and
+- success then recovered to within 5 points of the experiment's own baseline.
+
+The possible verdicts are `verified`, `not_fixed` (it reproduced but did not
+recover), or `inconclusive` (it never reproduced). `evaluate` reports the share
+of tested remediations that were verified.
+
+## Ambiguous incidents
+
+`s04-ambiguous-deadline-and-slow-bidders` ships a deploy that trims the
+auction deadline from 100ms to 80ms. Two seconds later, four bidders slow to
+about 85ms. Neither change breaks auctions on its own. Together they make
+every call to those bidders end at the 80ms cut, so their real latency never
+shows up in the telemetry. A careful investigator can see two things:
+
+- the deadline is cutting the calls, and
+- the bidders did slow down: DSP-A went from about 26ms to timing out.
+
+It cannot see whether the slowed bidders would fit the old deadline. The
+grader therefore counts abstaining as correct here. It also records whether a
+non-abstaining report kept both causes in its top three. An abstained report's
+remediation, rolling the deadline back in the sandbox, is the experiment that
+settles it.
+
+On the recorded run (success 99.4% to 0%), both rule-based methods abstain:
+
+| Method | Outcome | Why |
+|---|---|---|
+| fixed workflow | abstains | its two rules happen to score 0.6 and 0.5, inside its margin; its statement also wrongly calls the 80ms cut "the 100ms per-DSP budget" |
+| agent_offline | abstains | it spots that the timeouts land at the global deadline, below the per-DSP budget, and that bidders which used to answer in ~38ms now hit it |
+
 ## Safety model
 
 - **No command execution from scenarios.** A scenario can only `deploy`
@@ -321,8 +401,9 @@ add over the logs alone.
 
 The investigator follows the same rules: its tools are read-only functions
 over recorded files, and model output is never executed as a shell command.
-Remediation (milestone 4) will run only in a disposable environment, after
-approval, through the same allowlisted `deploy` and `dsp_config` actions.
+Remediation runs only in a disposable copy of the platform, only after a
+named approval of an unmodified proposal, and only through the typed,
+allowlisted changes above.
 
 ## Platform fixes found while making it reproducible
 
@@ -360,8 +441,8 @@ CPU bound. Scenarios run at 20–30 auctions/s to stay below that.
    fixed diagnostic baseline workflow.~~
 3. ~~A tool-using investigator with structured hypotheses and evidence
    references, plus a log-only prompt baseline.~~
-4. Sandbox remediation experiments behind an approval gate; ambiguous
-   scenarios where abstaining is the right answer.
+4. ~~Sandbox remediation experiments behind an approval gate; ambiguous
+   scenarios where abstaining is the right answer.~~
 5. Expand to 20–30 scenarios (missing index, poison message, duplicate
    delivery, connection leak cascade, budget exhaustion, ...), compare the
    investigator with both baselines on accuracy, abstention, time, tool calls
