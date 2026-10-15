@@ -10,3 +10,5 @@ BASE_COMPOSE_FILE = REPO_ROOT / "docker-compose.yml"
 OVERLAY_COMPOSE_FILE = PACKAGE_DIR / "compose.evidenceops.yml"
 ENV_FILE = REPO_ROOT / ".env"
 ENV_EXAMPLE_FILE = REPO_ROOT / ".env.example"
+# Bind-mounted into the OpenTelemetry collector; holds the live trace file.
+TELEMETRY_DIR = PACKAGE_DIR / ".telemetry"

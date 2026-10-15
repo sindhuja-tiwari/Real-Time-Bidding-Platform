@@ -23,10 +23,11 @@ from evidenceops.paths import (
     ENV_FILE,
     OVERLAY_COMPOSE_FILE,
     REPO_ROOT,
+    TELEMETRY_DIR,
 )
 
 PROJECT_NAME = "rtb-evidenceops"
-PLATFORM_SERVICES = ["postgres", "redis", "kafka", "dsp-simulator", "backend", "worker"]
+PLATFORM_SERVICES = ["postgres", "redis", "kafka", "dsp-simulator", "otel-collector", "backend", "worker"]
 # Budget-driven NO_BIDs would otherwise appear partway through a long run
 # and contaminate every scenario; budget exhaustion gets its own scenario.
 SEED_CAMPAIGN_BUDGET = 1_000_000
@@ -106,6 +107,8 @@ class Stack:
         self.ensure_env_file()
         self.deploy_override = None
         self._run("down", "-v", "--remove-orphans", timeout=300)
+        shutil.rmtree(TELEMETRY_DIR, ignore_errors=True)
+        TELEMETRY_DIR.mkdir(parents=True)
         self._run("up", "-d", "--build", *PLATFORM_SERVICES, timeout=1200)
         self.wait_healthy()
 
@@ -144,6 +147,16 @@ class Stack:
         return match.group(1)
 
     # ------------------------------------------------------------ evidence
+
+    def collect_traces(self, dest: Path, settle_seconds: float = 4.0) -> None:
+        """Copy the collector's trace file once in-flight batches have landed."""
+        time.sleep(settle_seconds)
+        source = TELEMETRY_DIR / "traces.jsonl"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if source.exists():
+            shutil.copy(source, dest)
+        else:
+            dest.write_text("")
 
     def logs(self, service: str) -> str:
         if service not in LOG_SERVICES:

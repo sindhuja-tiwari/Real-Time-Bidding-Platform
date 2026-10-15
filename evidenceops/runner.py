@@ -10,6 +10,7 @@ Layout of a run directory::
         db/<table>.csv          read-only exports of auction/bid/... tables
         db/pg_stat_activity.samples.jsonl  connection states sampled every 5s
         metrics/scrapes.jsonl   periodic /metrics scrapes of the backend
+        traces/spans.otlp.jsonl OpenTelemetry traces (OTLP JSON, one batch per line)
       ground_truth/             graders only, never shown to an investigator
         ground_truth.json       root cause, causal + decoy steps, remediation
         timeline.jsonl          every harness action with timestamps
@@ -77,6 +78,9 @@ class ScenarioRun:
         self.truth = self.dir / "ground_truth"
         self.deploy_state: DeployState
         self.step_times: Dict[int, List[float]] = {}  # index -> [started, finished]
+        # Logs of containers replaced by a deploy (compose only keeps the
+        # current container's logs, so they are saved before each recreate).
+        self.replaced_logs: Dict[str, List[str]] = {}
 
     # ------------------------------------------------------------ helpers
 
@@ -91,6 +95,8 @@ class ScenarioRun:
         record = self.deploy_state.apply(step)
         override = self.dir / "deploy.override.yml"
         override.write_text(yaml.safe_dump(self.deploy_state.compose_override(), sort_keys=True))
+        for service in ("backend", "worker"):
+            self.replaced_logs.setdefault(service, []).append(self.stack.logs(service))
         self.stack.redeploy(override)
         self.stack.wait_healthy()
         finished = time.time()
@@ -207,10 +213,11 @@ class ScenarioRun:
         return verification
 
     def _capture_platform_evidence(self) -> None:
+        self.stack.collect_traces(self.observed / "traces" / "spans.otlp.jsonl")
         for service in LOG_SERVICES:
             path = self.observed / "logs" / f"{service}.log"
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(self.stack.logs(service))
+            path.write_text("".join(self.replaced_logs.get(service, [])) + self.stack.logs(service))
         for name in READ_QUERIES:
             path = self.observed / "db" / f"{name}.csv"
             path.parent.mkdir(parents=True, exist_ok=True)

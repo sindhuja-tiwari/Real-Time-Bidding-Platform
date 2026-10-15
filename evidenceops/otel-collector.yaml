@@ -1,0 +1,22 @@
+# Receives OTLP traces from the backend and writes them, one OTLP-JSON batch
+# per line, to a file the harness copies into each run's observed/ folder.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 1s
+
+exporters:
+  file:
+    path: /data/traces.jsonl
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [file]

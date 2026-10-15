@@ -10,9 +10,16 @@ The target question:
 > show the supporting evidence, and test a remediation without touching the
 > live system.
 
-This directory currently holds **milestone 1**: a reproducible incident
-harness with three injected failures and recorded ground truth. The
-investigator itself comes in later milestones (see [Roadmap](#roadmap)).
+This directory currently holds **milestones 1 and 2**:
+
+- a reproducible incident harness with three injected failures and recorded
+  ground truth,
+- OpenTelemetry traces from the platform,
+- read-only diagnostic tools over a recorded run,
+- a fixed diagnostic workflow as the first baseline, and
+- a grader that scores any investigation method against ground truth.
+
+The agent itself comes in later milestones (see [Roadmap](#roadmap)).
 
 ## Quick start
 
@@ -25,7 +32,9 @@ python -m evidenceops list          # scenarios and their root-cause category
 python -m evidenceops validate      # static checks, no Docker needed
 python -m evidenceops run s02-global-timeout-misconfigured
 python -m evidenceops run --all     # every scenario, about 3 minutes each
-pytest evidenceops/tests            # harness unit tests, no Docker needed
+python -m evidenceops investigate   # run the fixed workflow on every recorded run
+python -m evidenceops evaluate      # grade saved investigations against ground truth
+pytest evidenceops/tests            # unit tests, no Docker needed
 ```
 
 Run from the repository root. The harness uses its own Compose project
@@ -40,8 +49,9 @@ your own Compose overrides, such as prebuilt images, on top of the harness's.
 ## What a run does
 
 1. **Reset.** `docker compose down -v`, start Postgres, Redis, Kafka, the DSP
-   simulator, backend and worker, wait for health, seed demo data (with
-   budgets large enough that a long run never exhausts them).
+   simulator, an OpenTelemetry collector, backend and worker, wait for health,
+   and seed demo data (with budgets large enough that a long run never
+   exhausts them).
 2. **Warm up** for 5 seconds so caches and connection pools are primed.
 3. **Baseline.** Open-loop auction traffic at a fixed rate from 20 simulated
    publishers. Open loop means requests keep arriving on schedule even when the
@@ -65,6 +75,8 @@ runs/<run_id>/
     db/auctions.csv, bids.csv, ...   read-only table exports
     db/pg_stat_activity.samples.jsonl  connection states every 5s
     metrics/scrapes.jsonl            backend /metrics every 5s
+    traces/spans.otlp.jsonl          OpenTelemetry spans (OTLP JSON)
+  investigations/<method>.json       reports written by `investigate`
   ground_truth/                      for graders only
     ground_truth.json                root cause, causal vs decoy steps, remediation
     timeline.jsonl                   every harness action, timestamped
@@ -115,6 +127,95 @@ step finished, so that blip never counts toward the drop. DSP-C always times
 out, even in the baseline (it is seeded at 150ms latency), which gives
 investigators some realistic background noise to rule out.
 
+## Telemetry
+
+The backend exports traces when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. The
+harness overlay sets it and adds a collector that writes spans to a file.
+Tracing is off in the normal dev stack. Each auction trace contains these
+spans:
+
+| Span | Key attributes | Separates |
+|---|---|---|
+| `db.pool.acquire` | `db.pool.size`, `db.pool.checked_out_before` | time spent waiting for a pooled connection, which is the signature of pool exhaustion |
+| `auction` | `auction.status`, `auction.winning_dsp` | the overall outcome |
+| `dsp.fanout` | `auction.global_timeout_ms`, `dsp.deadline_hit`, `dsp.timeouts` | the deadline actually in force |
+| `dsp.bid` | `dsp.name`, `dsp.timeout_ms`, `dsp.outcome`, `dsp.response_time_ms` | slow bidders from a short deadline |
+
+Traces also include FastAPI request spans. Per-query SQLAlchemy spans were
+left out: they cost enough CPU to stall the single backend process at about
+24 auctions/s.
+
+## Diagnostic tools
+
+`telemetry.py` holds the only interface an investigator gets to a run. Every
+tool is read-only and works on `observed/` only. Each call is stored under an
+evidence id (`E1`, `E2`, ...) that hypotheses must cite:
+
+| Tool | Returns |
+|---|---|
+| `alert_timeline` | the report and success rate / latency per 10s |
+| `list_deployments` | every deploy with its config diff |
+| `auction_outcomes(start, end)` | auction status counts, server duration percentiles |
+| `bid_outcomes(start, end)` | per-DSP outcome counts, timeout share, response times by outcome, configured DSP timeouts |
+| `span_latency(name, start, end, group_by)` | span duration percentiles, optionally per attribute, with the slowest trace id |
+| `trace_detail(trace_id)` | one trace's spans in order |
+| `log_events(service, start, end, contains)` | log events counted by kind, each with a `logs/<service>.log:<line>` reference |
+| `db_connections(start, end)` | sampled Postgres connection states and lock waits |
+
+## Investigation reports and grading
+
+Every method writes the same report shape (`investigation.py`):
+
+- a timeline,
+- ranked hypotheses, each with a root-cause category, a statement, and the
+  evidence ids that support it,
+- an abstain flag with a reason,
+- every evidence item collected, and
+- tool calls, elapsed time and cost.
+
+`evaluate` grades each report against `ground_truth/` and reports:
+
+- **Top-1 and top-3 accuracy** on clear incidents.
+- **Unsupported diagnosis rate.** A top hypothesis that cites no evidence the
+  method actually collected counts as unsupported, right or wrong.
+- **Correct abstention** on ambiguous incidents, and the abstention rate on
+  clear ones, where abstaining counts as a miss.
+- **Tool calls, time to correct diagnosis, and cost** per investigation.
+
+## Baseline: fixed diagnostic workflow
+
+`baselines/fixed_workflow.py` is a runbook encoded as code. It runs the same
+10 tool calls in the same order on every incident:
+
+1. Find the onset: a sustained drop below half the baseline success rate.
+2. Find deploys in the 60s before the onset.
+3. Compare auctions, per-DSP bids, DB pool wait, backend log events and
+   Postgres connections before and after the onset.
+
+It then scores the three categories it has rules for, using fixed
+thresholds, and abstains when the best score is weak or two causes are close.
+It never asks a follow-up question of the data.
+
+On a fresh `run --all` with traces enabled:
+
+| Scenario | Fixed workflow's top answer | Runner-up |
+|---|---|---|
+| s01 slow bidders | `external_dsp_latency`: "DSP timeout share rose from 3% to 99%, with TIMEOUT bids at ~100ms, the 100ms per-DSP budget" | `config_regression` (0.2): the 1.1.0 deploy |
+| s02 global timeout | `config_regression`: "...TIMEOUT bids are cut at ~15ms, well under the 100ms per-DSP budget; a deploy changed AUCTION_GLOBAL_TIMEOUT_MS" | none |
+| s03 DB pool | `db_pool_exhaustion`: "DB pool acquire p95 rose from 5ms to 30001ms; 59 pool timeout errors in backend logs" | `config_regression` (0.2) |
+
+Top-1 3/3, no abstentions, no unsupported diagnoses, 10 tool calls and
+about 0.3s per investigation, no model cost.
+
+**Read that 3/3 with care.** The workflow's thresholds were written by someone
+who knew these three scenarios, so it is effectively fitted to them. It
+proves the evidence is sufficient and the grader works. It does not prove
+that a runbook is enough. The real comparison needs scenarios the rules were
+not written for, plus ambiguous incidents. Those come with the scenario
+expansion in milestone 5, where this baseline is expected to drop sharply:
+it has no rules at all for missing indexes, poison messages or duplicate
+delivery.
+
 ## Safety model
 
 - **No command execution from scenarios.** A scenario can only `deploy`
@@ -163,8 +264,8 @@ CPU bound. Scenarios run at 20–30 auctions/s to stay below that.
 ## Roadmap
 
 1. ~~Reproducible platform, three injected failures with ground truth.~~
-2. Telemetry (OpenTelemetry traces across auction, DSP fan-out and DB) and a
-   fixed diagnostic baseline workflow.
+2. ~~Telemetry (OpenTelemetry traces across auction, DSP fan-out and DB) and a
+   fixed diagnostic baseline workflow.~~
 3. A tool-using investigator with structured hypotheses and evidence
    references, plus a log-only prompt baseline.
 4. Sandbox remediation experiments behind an approval gate; ambiguous
