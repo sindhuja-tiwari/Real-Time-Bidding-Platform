@@ -10,20 +10,23 @@ The target question:
 > show the supporting evidence, and test a remediation without touching the
 > live system.
 
-This directory currently holds **milestones 1 and 2**:
+This directory currently holds **milestones 1 to 3**:
 
 - a reproducible incident harness with three injected failures and recorded
   ground truth,
 - OpenTelemetry traces from the platform,
 - read-only diagnostic tools over a recorded run,
-- a fixed diagnostic workflow as the first baseline, and
+- a tool-using investigator (Claude) that has to cite evidence for every claim,
+- two baselines to compare it with: a fixed diagnostic workflow and a
+  log-only prompt, and
 - a grader that scores any investigation method against ground truth.
 
-The agent itself comes in later milestones (see [Roadmap](#roadmap)).
+Remediation experiments and the larger scenario suite come next (see
+[Roadmap](#roadmap)).
 
 ## Quick start
 
-Requirements: Docker with Compose v2, Python 3.9+.
+Requirements: Docker with Compose v2, Python 3.10+.
 
 ```bash
 pip install -r evidenceops/requirements.txt
@@ -33,6 +36,10 @@ python -m evidenceops validate      # static checks, no Docker needed
 python -m evidenceops run s02-global-timeout-misconfigured
 python -m evidenceops run --all     # every scenario, about 3 minutes each
 python -m evidenceops investigate   # run the fixed workflow on every recorded run
+python -m evidenceops investigate --method agent_offline   # no API key needed
+python -m evidenceops investigate --method agent           # needs ANTHROPIC_API_KEY
+python -m evidenceops investigate --method log_only        # needs ANTHROPIC_API_KEY
+python -m evidenceops investigate --method agent --provider gemini   # free tier, GEMINI_API_KEY
 python -m evidenceops evaluate      # grade saved investigations against ground truth
 pytest evidenceops/tests            # unit tests, no Docker needed
 ```
@@ -216,6 +223,90 @@ expansion in milestone 5, where this baseline is expected to drop sharply:
 it has no rules at all for missing indexes, poison messages or duplicate
 delivery.
 
+## The investigator
+
+`agent/` is a tool-using investigator. The model gets the on-call report and
+the eight read-only tools above, decides which to call, and finishes by
+calling `submit_report` with a timeline and ranked hypotheses. The system
+prompt (`agent/spec.py`) asks it to keep several causes open, call a tool
+whose answer would separate the leading candidates before settling, treat a
+deploy near the onset as a suspect rather than a conclusion, and abstain when
+the evidence does not separate the causes.
+
+The harness (`agent/loop.py`), not the model, enforces what the grader relies
+on:
+
+- **Read-only tools only.** Tool names are checked against the registry and
+  arguments against each tool's signature. An unknown tool or bad argument
+  returns an error to the model and produces no evidence. There is no shell
+  tool.
+- **Citations must be real.** A report that cites an evidence id the model
+  never received is sent back with the problems listed. After two rejections
+  the run ends as an abstention marked `harness:`, so a model cannot get a
+  diagnosis graded by inventing evidence.
+- **A tool budget** (20 calls by default). Past it, tool calls are refused and
+  the model is told to submit.
+- **Every request and tool result is kept** in
+  `investigations/agent.transcript.json`, so any diagnosis can be traced back
+  to the data it was based on.
+
+Model settings follow current Claude API guidance: `claude-opus-5-5` with
+adaptive thinking at `high` effort (both overridable with `--model` and
+`--effort`), prompt caching on the static prefix (tools and system prompt), and
+server-side fallback if a safety classifier declines a request. Cost is
+computed from the token usage of each response.
+
+### Running it
+
+The real agent needs an Anthropic API key. Create one at
+<https://console.anthropic.com/settings/keys> and export it:
+
+```bash
+export ANTHROPIC_API_KEY=...
+python -m evidenceops investigate --method agent
+```
+
+Keys are read from the environment only; nothing in this repository stores
+one.
+
+### Free-tier providers
+
+`--provider gemini` or `--provider groq` runs the same agent and log-only
+baseline on a model with a free tier, through their OpenAI-compatible chat
+APIs (`agent/openai_compat.py`). The harness is unchanged: same tools, same
+citation checks, same grading. Reports are saved as `agent_gemini`,
+`log_only_groq` and so on, so they can be compared with the Claude runs.
+
+| Provider | Get a key | Export | Default model |
+|---|---|---|---|
+| Gemini | <https://aistudio.google.com/apikey> | `GEMINI_API_KEY` | `gemini-2.5-flash` |
+| Groq | <https://console.groq.com/keys> | `GROQ_API_KEY` | `llama-3.3-70b-versatile` |
+
+Pass `--model` to use another model; provider model lists change often.
+Free tiers have tight rate limits, and cost is recorded as $0 for them.
+
+### Without a key: `agent_offline`
+
+`agent/offline.py` stands in for the model so the whole pipeline (loop,
+citation checks, transcript, grading) runs and is tested without a key. It is
+a rule-driven policy, not an LLM, and its scores say nothing about how the
+model will do. It works the way the system prompt asks the model to: it reads
+the symptom first (auctions stuck, or bidders not answering) and only calls
+the tools that separate the causes that symptom allows, then drills into the
+slowest trace. On the three recorded runs it gets the same 3/3 as the fixed
+workflow with 8 to 9 tool calls instead of 10. That comparison has the same
+caveat as the fixed workflow: both were written with these scenarios in view.
+
+## Baseline: log-only prompt
+
+`baselines/log_only.py` is "paste the logs into a chatbot": one Claude call
+with the on-call report and the raw backend and worker logs for the telemetry
+window, no tools, no traces, no database and no deployment records. Repeated
+lines of the same kind are collapsed so the window fits in one request. It
+answers in the same report schema through structured outputs, citing each
+service's log excerpt as one evidence id. It shows what the tools and traces
+add over the logs alone.
+
 ## Safety model
 
 - **No command execution from scenarios.** A scenario can only `deploy`
@@ -228,9 +319,10 @@ delivery.
 - **Disposable environment.** Runs use their own Compose project and wipe
   its volumes; nothing touches a long-lived database.
 
-The investigator in later milestones gets the same rules: diagnostic tools
-are read-only, remediation runs only in a disposable environment after
-approval, and model output is never executed as a shell command.
+The investigator follows the same rules: its tools are read-only functions
+over recorded files, and model output is never executed as a shell command.
+Remediation (milestone 4) will run only in a disposable environment, after
+approval, through the same allowlisted `deploy` and `dsp_config` actions.
 
 ## Platform fixes found while making it reproducible
 
@@ -266,8 +358,8 @@ CPU bound. Scenarios run at 20–30 auctions/s to stay below that.
 1. ~~Reproducible platform, three injected failures with ground truth.~~
 2. ~~Telemetry (OpenTelemetry traces across auction, DSP fan-out and DB) and a
    fixed diagnostic baseline workflow.~~
-3. A tool-using investigator with structured hypotheses and evidence
-   references, plus a log-only prompt baseline.
+3. ~~A tool-using investigator with structured hypotheses and evidence
+   references, plus a log-only prompt baseline.~~
 4. Sandbox remediation experiments behind an approval gate; ambiguous
    scenarios where abstaining is the right answer.
 5. Expand to 20–30 scenarios (missing index, poison message, duplicate

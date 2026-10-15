@@ -120,11 +120,13 @@ rtb-platform/
 [`evidenceops/`](evidenceops/README.md) turns this platform into a test bed
 for incident investigation: reproducible injected failures (slow bidders,
 bad config deploys, DB pool exhaustion, ...) with recorded ground truth, and
-in later milestones an investigator agent evaluated against them.
+a tool-using investigator agent graded against them alongside two baselines.
 
 ```bash
 pip install -r evidenceops/requirements.txt
 python -m evidenceops run --all
+python -m evidenceops investigate --method agent   # needs ANTHROPIC_API_KEY
+python -m evidenceops evaluate
 ```
 
 ## Known limitations / honest gaps

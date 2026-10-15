@@ -150,7 +150,8 @@ class RunEvidence:
         if service not in cache:
             lines = []
             path = self.dir / "logs" / f"{service}.log"
-            for n, raw in enumerate(path.read_text().splitlines(), start=1):
+            text = path.read_text() if path.exists() else ""
+            for n, raw in enumerate(text.splitlines(), start=1):
                 m = _LOG_LINE.match(raw)
                 if m:
                     lines.append({"line": n, "_ts": parse_ts(m["ts"]), "msg": m["msg"]})
