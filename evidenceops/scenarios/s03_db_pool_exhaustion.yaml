@@ -1,0 +1,48 @@
+id: s03-db-pool-exhaustion
+title: A deploy shrinks the database connection pool below peak demand
+
+report: >
+  Auction success rate dropped sharply shortly after the auction backend was
+  deployed this afternoon. Identify the likely cause, show the supporting
+  evidence, and test a remediation without touching the live system.
+
+traffic:
+  rps: 24
+  baseline_seconds: 40
+  incident_seconds: 60
+
+steps:
+  - at: 0
+    action: deploy
+    version: 1.3.0
+    env:
+      DB_POOL_SIZE: "2"
+      DB_MAX_OVERFLOW: "0"
+      EVENT_MAX_RETRIES: "3"
+
+ground_truth:
+  category: db_pool_exhaustion
+  component: backend SQLAlchemy connection pool (DB_POOL_SIZE / DB_MAX_OVERFLOW)
+  summary: >
+    Deploy v1.3.0 cut the backend's connection pool from 20+10 to 2+0. Each
+    auction holds a connection for roughly the whole ~100ms DSP fan-out, so
+    the pool now serves about 14 auctions/s against 24/s of traffic. Requests
+    queue for a connection, latency climbs past the publishers' 2s timeout,
+    and success collapses even though Postgres itself is idle.
+  causal_steps: [0]
+  causal_settings: [DB_POOL_SIZE, DB_MAX_OVERFLOW]
+  decoy_settings: [EVENT_MAX_RETRIES]
+  distinguishing_evidence:
+    - publishers hit their 2s timeout and auction duration_ms climbs into seconds, yet DSP bids stay VALID at their usual 25-70ms response times, ruling out slow bidders
+    - backend logs show SQLAlchemy QueuePool limit/timeout errors starting right after the deploy
+    - pg_stat_activity samples fall from ~20 connections to a handful, mostly 'idle in transaction', with no lock waits, so Postgres itself is idle rather than overloaded
+    - the deploy's config diff shrinks DB_POOL_SIZE and DB_MAX_OVERFLOW
+  remediation:
+    description: Restore DB_POOL_SIZE=20 and DB_MAX_OVERFLOW=10 (or size the pool above rps x hold time).
+    changes:
+      - {kind: deploy_setting, setting: DB_POOL_SIZE, value: "20"}
+      - {kind: deploy_setting, setting: DB_MAX_OVERFLOW, value: "10"}
+    expected_min_success_rate: 0.9
+
+verify:
+  min_success_rate_drop: 0.3

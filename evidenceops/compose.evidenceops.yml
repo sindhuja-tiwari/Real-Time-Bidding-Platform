@@ -1,0 +1,7 @@
+# Layered on top of the root docker-compose.yml by the EvidenceOps harness.
+# Only adds what incident runs need for reproducibility; the platform itself
+# is unchanged.
+services:
+  dsp-simulator:
+    environment:
+      SIM_RANDOM_SEED: "1337"

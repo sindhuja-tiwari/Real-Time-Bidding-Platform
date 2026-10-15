@@ -1,0 +1,47 @@
+id: s02-global-timeout-misconfigured
+title: A deploy shortens the auction deadline to 15ms
+
+report: >
+  Auction success rate dropped sharply shortly after the auction backend was
+  deployed this afternoon. Identify the likely cause, show the supporting
+  evidence, and test a remediation without touching the live system.
+
+traffic:
+  rps: 20
+  baseline_seconds: 40
+  incident_seconds: 60
+
+steps:
+  # 0: the deploy carries one bad value next to two harmless ones
+  - at: 0
+    action: deploy
+    version: 1.2.0
+    env:
+      AUCTION_GLOBAL_TIMEOUT_MS: "15"
+      REDIS_CACHE_TTL_SECONDS: "60"
+      EVENT_RETRY_BASE_SECONDS: "0.5"
+
+ground_truth:
+  category: config_regression
+  component: backend setting AUCTION_GLOBAL_TIMEOUT_MS
+  summary: >
+    Deploy v1.2.0 set AUCTION_GLOBAL_TIMEOUT_MS from 100 to 15. The fan-out is
+    cancelled after 15ms, so almost every DSP is recorded as TIMEOUT even
+    though the bidders themselves are as fast as before. It looks like slow
+    external bidders, but the cut-off comes from the platform.
+  causal_steps: [0]
+  causal_settings: [AUCTION_GLOBAL_TIMEOUT_MS]
+  decoy_settings: [REDIS_CACHE_TTL_SECONDS, EVENT_RETRY_BASE_SECONDS]
+  distinguishing_evidence:
+    - TIMEOUT bid rows have response_time_ms of exactly 15 (the global deadline) rather than ~100 (the per-DSP budget)
+    - backend logs show auction_global_timeout events with deadline_ms=15 starting right after the deploy finished
+    - auction server duration drops to ~15-25ms instead of rising
+    - the drop starts at the deploy, and DSP-A's ~20ms responses still occasionally win
+  remediation:
+    description: Roll AUCTION_GLOBAL_TIMEOUT_MS back to 100.
+    changes:
+      - {kind: deploy_setting, setting: AUCTION_GLOBAL_TIMEOUT_MS, value: "100"}
+    expected_min_success_rate: 0.9
+
+verify:
+  min_success_rate_drop: 0.3

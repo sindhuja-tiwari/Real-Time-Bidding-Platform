@@ -21,3 +21,6 @@ load-tests/results/
 .DS_Store
 .idea/
 .vscode/
+
+# EvidenceOps incident runs (large; regenerate with python -m evidenceops run)
+evidenceops/runs/
