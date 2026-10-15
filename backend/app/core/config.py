@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     # --- App ---
     APP_NAME: str = "rtb-platform"
     ENV: str = "local"
+    APP_VERSION: str = "1.0.0"
     API_V1_PREFIX: str = "/api/v1"
 
     # --- Security ---
@@ -17,6 +18,9 @@ class Settings(BaseSettings):
 
     # --- Postgres ---
     DATABASE_URL: str = "postgresql+asyncpg://rtb:rtb@postgres:5432/rtb"
+    DB_POOL_SIZE: int = 20
+    DB_MAX_OVERFLOW: int = 10
+    DB_POOL_TIMEOUT_SECONDS: float = 30.0
 
     # --- Redis ---
     REDIS_URL: str = "redis://redis:6379/0"

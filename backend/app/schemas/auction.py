@@ -30,7 +30,7 @@ class BidResponse(BaseModel):
     id: uuid.UUID
     dsp_id: uuid.UUID
     dsp_name: str | None = None
-    campaign_id: uuid.UUID
+    campaign_id: uuid.UUID | None
     amount: float
     response_time_ms: int | None
     status: str

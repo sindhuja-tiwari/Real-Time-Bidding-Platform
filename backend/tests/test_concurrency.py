@@ -97,3 +97,32 @@ async def test_dsp_error_produces_invalid_bid_not_an_exception():
         results = await collect_bids(dsps, ctx, global_timeout_ms=200, http_client=client)
 
     assert results[0].status == BidStatus.INVALID
+
+
+@pytest.mark.asyncio
+async def test_slow_dsp_calls_are_not_cancelled_after_the_deadline():
+    """Cancelling in-flight httpx requests can leave pooled connections stuck
+    and slowly exhaust the shared pool, so the fan-out must stop waiting for
+    slow DSPs without cancelling their requests."""
+    campaign_id = str(uuid.uuid4())
+    cancelled: list[str] = []
+    finished: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        try:
+            await asyncio.sleep(0.15)
+        except asyncio.CancelledError:
+            cancelled.append(request.url.host)
+            raise
+        finished.append(request.url.host)
+        return httpx.Response(200, json={"campaign_id": campaign_id, "amount": 3.0})
+
+    dsps = [make_dsp("dsp-per-dsp-timeout", 50), make_dsp("dsp-global-timeout", 500)]
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        ctx = BidRequestContext("req5", uuid.uuid4(), "US", "mobile")
+        results = await collect_bids(dsps, ctx, global_timeout_ms=100, http_client=client)
+        assert all(r.status == BidStatus.TIMEOUT for r in results)
+        await asyncio.sleep(0.2)  # let the abandoned calls run to completion
+
+    assert cancelled == []
+    assert sorted(finished) == ["dsp-global-timeout", "dsp-per-dsp-timeout"]

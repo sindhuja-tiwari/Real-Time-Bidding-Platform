@@ -22,13 +22,20 @@ AuctionService.run_auction()
 `bidding/client.py::collect_bids` fans out to every eligible DSP with
 `asyncio.create_task`, never sequentially. Two timeout layers:
 
-- **Per-DSP** (`dsp.timeout_ms`): enforced with `asyncio.wait_for` around each
-  individual HTTP call. A slow DSP only costs its own budget.
+- **Per-DSP** (`dsp.timeout_ms`): passed to httpx as the request timeout,
+  with an `asyncio.wait` backstop. A slow DSP only costs its own budget.
 - **Global** (`AUCTION_GLOBAL_TIMEOUT_MS`, default 100ms): enforced with
-  `asyncio.wait_for` around `asyncio.gather(...)`. If the deadline fires,
-  any still-running tasks are cancelled and given a synthetic `TIMEOUT`
-  result instead of raising -- the auction always returns a complete,
-  gap-free list of one outcome per DSP.
+  `asyncio.wait(tasks, timeout=...)`. If the deadline fires, DSPs still
+  running get a synthetic `TIMEOUT` result instead of raising -- the auction
+  always returns a complete, gap-free list of one outcome per DSP.
+
+In-flight DSP requests are never cancelled. Cancelling an httpx request
+mid-flight (the original `asyncio.wait_for` design) can leave its pooled
+connection stuck in `CONNECTING`; under sustained load those stuck
+connections filled the shared pool until every DSP call timed out, healthy
+DSPs included, until the process restarted. Abandoned calls now finish in
+the background at their own httpx timeout
+(`tests/test_concurrency.py::test_slow_dsp_calls_are_not_cancelled_after_the_deadline`).
 
 This is verified, not just asserted: `tests/test_concurrency.py` measures
 wall-clock time for 3 DSPs at 40ms each and confirms the fan-out completes

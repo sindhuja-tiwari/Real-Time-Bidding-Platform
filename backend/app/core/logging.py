@@ -47,6 +47,10 @@ def configure_logging(env: str = "local") -> None:
         stream=sys.stdout,
         level=logging.INFO if env != "local" else logging.DEBUG,
     )
+    # Client libraries log every connection and request at DEBUG, which
+    # swamps the app's own events and costs real CPU on the auction path.
+    for noisy in ("httpx", "httpcore", "aiokafka", "kafka", "asyncio"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
     structlog.configure(
         processors=[

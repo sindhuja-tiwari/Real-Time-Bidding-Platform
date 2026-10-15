@@ -1,0 +1,59 @@
+id: s01-slow-external-bidders
+title: External bidders slow down right after an unrelated deploy
+
+report: >
+  Auction success rate dropped sharply shortly after the auction backend was
+  deployed this afternoon. Identify the likely cause, show the supporting
+  evidence, and test a remediation without touching the live system.
+
+traffic:
+  rps: 20
+  baseline_seconds: 40
+  incident_seconds: 60
+
+steps:
+  # 0: a routine deploy with harmless tuning changes (the red herring)
+  - at: 0
+    action: deploy
+    version: 1.1.0
+    env:
+      REDIS_CACHE_TTL_SECONDS: "45"
+      RATE_LIMIT_ADMIN_PER_MIN: "120"
+  # 1: shortly after, the shared upstream for four external bidders degrades
+  - at: 20
+    action: dsp_config
+    dsps: [dsp-a, dsp-b, dsp-d, dsp-e]
+    set:
+      latency_ms: 120
+      latency_jitter_ms: 25
+
+ground_truth:
+  category: external_dsp_latency
+  component: external DSPs DSP-A, DSP-B, DSP-D, DSP-E
+  summary: >
+    Four external bidders started answering in roughly 95-145ms, past the
+    100ms per-DSP timeout, so most of their bids are discarded as TIMEOUT and
+    many auctions end NO_BID. The v1.1.0 deploy only changed a cache TTL and an
+    admin rate limit and is unrelated; the drop starts about 20s after it
+    began, once the platform had already recovered from the restart.
+  causal_steps: [1]
+  decoy_steps: [0]
+  decoy_settings: [REDIS_CACHE_TTL_SECONDS, RATE_LIMIT_ADMIN_PER_MIN]
+  distinguishing_evidence:
+    - bid rows for DSP-A/B/D/E switch from VALID to TIMEOUT with response_time_ms at the ~100ms per-DSP budget, not at a lower cap
+    - backend logs show dsp_timeout events with budget_ms=100 for those DSPs
+    - success recovers after the deploy's restart blip and only then collapses; auction server duration stays near the 100ms deadline
+    - no database pool errors and HTTP status stays 201 (auctions complete as NO_BID rather than failing)
+  remediation:
+    description: >
+      Raise the per-DSP timeout and the global auction deadline to ~180ms (or
+      take the degraded DSPs out of rotation). Raising only the global
+      deadline does not help, because the per-DSP timeout_ms stored on each DSP
+      row still cuts the calls at 100ms.
+    changes:
+      - {kind: deploy_setting, setting: AUCTION_GLOBAL_TIMEOUT_MS, value: "180"}
+      - {kind: dsp_timeout_ms, dsps: [DSP-A, DSP-B, DSP-D, DSP-E], value: 180}
+    expected_min_success_rate: 0.9
+
+verify:
+  min_success_rate_drop: 0.3

@@ -97,6 +97,9 @@ class AuctionService:
         except Exception:
             AUCTION_FAILED_TOTAL.inc()
             duration_ms = int((time.perf_counter() - start) * 1000)
+            # The failure may have left the session mid-transaction (e.g. a
+            # failed flush); roll back so the FAILED status can be recorded.
+            await self.db.rollback()
             await self.auction_repo.finalize(auction, "FAILED", duration_ms, None)
             logger.error("auction_failed", request_id=request.request_id, exc_info=True)
             raise
@@ -131,18 +134,22 @@ class AuctionService:
             active_dsps, ctx, settings.AUCTION_GLOBAL_TIMEOUT_MS, get_http_client()
         )
 
+        # ad_slot.floor_price is NUMERIC (Decimal); the bidding code works in
+        # floats, and a Decimal clearing price breaks metrics and event JSON.
+        floor_price = float(ad_slot.floor_price)
+
         # ---- 4. Validate each bid against the campaign it targets ----
         campaign_by_id = {c.id: c for c in eligible_campaigns}
         validated: list[RawBid] = []
         for bid in raw_bids:
             snapshot = await self.campaign_service.get_cached_snapshot(bid.campaign_id) \
                 if bid.campaign_id in campaign_by_id else None
-            validated.append(validate_bid(bid, snapshot, ad_slot.floor_price, request.user.country, request.user.device))
+            validated.append(validate_bid(bid, snapshot, floor_price, request.user.country, request.user.device))
             BID_TOTAL.labels(status=validated[-1].status.value).inc()
 
         # ---- 5. Rank & select winner ----
         strategy = get_strategy(settings.AUCTION_DEFAULT_TYPE)
-        result = strategy.select(validated, ad_slot.floor_price)
+        result = strategy.select(validated, floor_price)
 
         winning_bid_row: Bid | None = None
         budget_ok = True
@@ -157,7 +164,10 @@ class AuctionService:
         # ---- 7. Persist all bids ----
         bid_rows = [
             Bid(
-                auction_id=auction.id, dsp_id=b.dsp_id, campaign_id=b.campaign_id,
+                auction_id=auction.id, dsp_id=b.dsp_id,
+                # Timeouts/no-bids carry a nil campaign id; only store ids that
+                # name a campaign we know exists (bid.campaign_id is an FK).
+                campaign_id=b.campaign_id if b.campaign_id in campaign_by_id else None,
                 amount=b.amount, response_time_ms=b.response_time_ms,
                 status=(BidStatus.WON.value if (result.winner is b and budget_ok) else
                         (BidStatus.LOST.value if b.status == BidStatus.VALID else b.status.value)),

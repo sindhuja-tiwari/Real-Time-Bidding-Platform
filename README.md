@@ -115,6 +115,18 @@ rtb-platform/
 - [`docs/failure-handling.md`](docs/failure-handling.md) — degradation behavior per dependency, retry policy
 - [`docs/performance.md`](docs/performance.md) — load-testing methodology (numbers to be filled in by you)
 
+## EvidenceOps
+
+[`evidenceops/`](evidenceops/README.md) turns this platform into a test bed
+for incident investigation: reproducible injected failures (slow bidders,
+bad config deploys, DB pool exhaustion, ...) with recorded ground truth, and
+in later milestones an investigator agent evaluated against them.
+
+```bash
+pip install -r evidenceops/requirements.txt
+python -m evidenceops run --all
+```
+
 ## Known limitations / honest gaps
 
 - Load-test numbers in `docs/performance.md` are placeholders (see above) —

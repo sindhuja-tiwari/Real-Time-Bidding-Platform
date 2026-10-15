@@ -101,10 +101,10 @@ AuctionService.run_auction()
    │ 3. load ad_slot -> eligible campaigns (Phase 1: Postgres query; Phase 3: Redis cache-aside)
    │ 4. build BidRequest per eligible DSP
    ▼
-BiddingClient.collect_bids()   ── asyncio.gather with per-DSP timeout + global timeout
+BiddingClient.collect_bids()   ── asyncio.wait with per-DSP timeout + global timeout
    │        ├── DSP-A  (task, timeout=Nms)
    │        ├── DSP-B  (task, timeout=Nms)
-   │        └── DSP-C  (task, timeout=Nms) -> cancelled if global deadline hit
+   │        └── DSP-C  (task, timeout=Nms) -> recorded TIMEOUT if global deadline hit
    ▼
 AuctionEngine.select_winner(valid_bids)
    │ 5. filter: floor price, campaign status, budget, targeting

@@ -15,6 +15,7 @@ matters").
 from __future__ import annotations
 
 import asyncio
+import os
 import random
 import time
 import uuid
@@ -23,6 +24,11 @@ from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel, Field
 
 app = FastAPI(title="DSP Simulator")
+
+# Optional fixed seed so latency/failure draws repeat across runs (EvidenceOps
+# incident scenarios rely on this for reproducibility).
+if os.getenv("SIM_RANDOM_SEED"):
+    random.seed(int(os.environ["SIM_RANDOM_SEED"]))
 
 
 class DSPConfig(BaseModel):

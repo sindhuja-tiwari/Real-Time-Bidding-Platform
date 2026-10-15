@@ -8,7 +8,7 @@ latency budget even when any single dependency is degraded. Concretely:
 | Dependency down | Behavior | Where enforced |
 |---|---|---|
 | One or more DSPs slow/erroring | Auction completes using whichever bids arrived in time; the failing DSP's bids are marked `TIMEOUT`/`INVALID` | `bidding/client.py` (per-DSP timeout, broad `except` around each call) |
-| All DSPs slow | Auction still completes at the global deadline, with `NO_BID` if nothing valid came back in time | `bidding/client.py` (`asyncio.wait_for` around `gather`) |
+| All DSPs slow | Auction still completes at the global deadline, with `NO_BID` if nothing valid came back in time | `bidding/client.py` (`asyncio.wait` with the global deadline) |
 | Redis unavailable | Reads fall back to Postgres (cache miss behavior); writes to Redis are skipped with a warning, not an exception | `core/redis_client.py` (`safe_get`/`safe_set`/`safe_delete` swallow exceptions) |
 | Kafka unavailable | Auction result is already committed to Postgres before publish is attempted; the publish is fire-and-forget and its failure is logged + counted in `rtb_kafka_publish_failures_total`, never raised | `core/kafka_client.py` / `events/producer.py` |
 | Postgres unavailable | The auction fails loudly (`FAILED` status, 500) -- Postgres is the one dependency this project treats as non-optional, since it's the system of record for money (budgets) and auction results | `services/auction/service.py`'s `except Exception` block |
