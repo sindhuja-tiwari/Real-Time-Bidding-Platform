@@ -31,6 +31,12 @@ class DSPService:
             raise NotFoundError(f"DSP {dsp_id} not found")
         return dsp
 
+    async def update(self, dsp_id: uuid.UUID, **fields) -> DSP:
+        dsp = await self.get(dsp_id)
+        for key, value in fields.items():
+            setattr(dsp, key, value)
+        return await self.repo.save(dsp)
+
     async def list_all(self) -> list[DSP]:
         return await self.repo.list_all()
 

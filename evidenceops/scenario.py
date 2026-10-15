@@ -63,6 +63,8 @@ class GroundTruth:
     # changes in the same deploys are harmless.
     causal_settings: List[str] = field(default_factory=list)
     decoy_settings: List[str] = field(default_factory=list)
+    # Ambiguous scenarios only: the causes the evidence cannot tell apart.
+    candidates: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -122,6 +124,7 @@ def parse_scenario(data: Dict[str, Any], path: Optional[Path] = None) -> Scenari
         remediation=dict(_require(gt_raw, "remediation", where)),
         causal_settings=list(gt_raw.get("causal_settings") or []),
         decoy_settings=list(gt_raw.get("decoy_settings") or []),
+        candidates=list(gt_raw.get("candidates") or []),
     )
     if gt.category not in ROOT_CAUSE_CATEGORIES:
         raise ScenarioError(f"{where}: unknown category '{gt.category}'")
@@ -137,6 +140,13 @@ def parse_scenario(data: Dict[str, Any], path: Optional[Path] = None) -> Scenari
         if key not in deployed:
             raise ScenarioError(f"{where}: setting '{key}' is not changed by any deploy step")
 
+    ambiguous = bool(data.get("ambiguous", False))
+    if ambiguous and len(gt.candidates) < 2:
+        raise ScenarioError(f"{where}: an ambiguous scenario must list at least two ground_truth.candidates")
+    for c in gt.candidates:
+        if c not in ROOT_CAUSE_CATEGORIES:
+            raise ScenarioError(f"{where}: unknown candidate category '{c}'")
+
     scenario = Scenario(
         id=sid,
         title=_require(data, "title", where),
@@ -145,7 +155,7 @@ def parse_scenario(data: Dict[str, Any], path: Optional[Path] = None) -> Scenari
         steps=steps,
         ground_truth=gt,
         verify=Verify(**(data.get("verify") or {})),
-        ambiguous=bool(data.get("ambiguous", False)),
+        ambiguous=ambiguous,
         path=path,
         raw=data,
     )

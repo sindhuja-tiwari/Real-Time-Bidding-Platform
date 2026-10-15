@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from evidenceops import remediation
 from evidenceops.scenario import ROOT_CAUSE_CATEGORIES
 from evidenceops.telemetry import LOG_SERVICES
 
@@ -42,6 +43,13 @@ fits. Each hypothesis cites the evidence ids that support it, and optionally
 those that cut against it. Set `abstain` to true, with a reason, when the
 evidence does not separate the leading causes or does not show a cause at all;
 an honest abstention is better than a confident wrong answer.
+
+You may also propose a remediation: a short list of changes from the allowed
+kinds (set an allowlisted setting, roll a setting back to its value before the
+last deploy that changed it, or set per-DSP timeouts). It will not touch
+production: a person must approve it, and it is then tested in a disposable
+copy of the platform. When you abstain, a remediation can serve as the
+experiment that would tell the leading causes apart.
 """
 
 _WINDOW = {
@@ -179,11 +187,28 @@ REPORT_SCHEMA: Dict[str, Any] = {
     "additionalProperties": False,
 }
 
+SUBMIT_SCHEMA: Dict[str, Any] = {
+    **REPORT_SCHEMA,
+    "properties": {
+        **REPORT_SCHEMA["properties"],
+        "remediation": {
+            "type": "object",
+            "description": "optional; changes to test in a disposable copy after human approval",
+            "properties": {
+                "changes": {"type": "array", "items": remediation.CHANGE_SCHEMA},
+                "rationale": {"type": "string"},
+            },
+            "required": ["changes", "rationale"],
+            "additionalProperties": False,
+        },
+    },
+}
+
 SUBMIT_TOOL = {
     "name": "submit_report",
     "description": "Submit the final investigation report. Call once, after gathering evidence. Every "
     "evidence id cited must come from a tool result you received.",
-    "input_schema": REPORT_SCHEMA,
+    "input_schema": SUBMIT_SCHEMA,
 }
 
 TOOLS: List[Dict[str, Any]] = TELEMETRY_TOOLS + [SUBMIT_TOOL]
@@ -209,6 +234,11 @@ def validate_report(report: Dict[str, Any], known_ids: set) -> List[str]:
         unknown = [e for e in (h.get("supporting") or []) + (h.get("refuting") or []) if e not in known_ids]
         if unknown:
             problems.append(f"hypothesis {i}: cites evidence ids you never received: {unknown}")
+    for i, change in enumerate((report.get("remediation") or {}).get("changes") or [], 1):
+        try:
+            remediation.parse_change(change)
+        except remediation.InvalidChange as exc:
+            problems.append(f"remediation change {i}: {exc}")
     for i, t in enumerate(report.get("timeline") or [], 1):
         unknown = [e for e in t.get("evidence") or [] if e not in known_ids]
         if unknown:

@@ -44,6 +44,18 @@ def _onset(buckets: List[Dict[str, Any]]) -> Optional[Tuple[str, float]]:
     return None
 
 
+def _timeout_p50(stats: Dict[str, Any]) -> float:
+    return float(stats["by_status"].get("TIMEOUT", {}).get("response_time_ms_p50") or 0)
+
+
+def _answer_p50(stats: Optional[Dict[str, Any]]) -> Optional[float]:
+    """Median response time of a DSP's answered (non-timeout) bids."""
+    if not stats:
+        return None
+    times = [v["response_time_ms_p50"] for k, v in stats["by_status"].items() if k != "TIMEOUT" and v.get("response_time_ms_p50") is not None]
+    return statistics.median(times) if times else None
+
+
 def _share(counts: Dict[str, int], key: str) -> float:
     total = sum(counts.values())
     return counts.get(key, 0) / total if total else 0.0
@@ -99,6 +111,7 @@ def policy() -> Generator[List[Call], Results, Dict[str, Any]]:
         against[cat] += [e for e in evidence if e not in against[cat]]
 
     deep_trace: Optional[str] = None
+    censored_conflict = False
     if stuck:
         add("db_pool_exhaustion", 0.1, [ids["auc_after"]],
             f"auction p50 went from {auc_before['duration_ms']['p50']:.0f}ms to {auc_after['duration_ms']['p50']:.0f}ms with "
@@ -136,16 +149,35 @@ def policy() -> Generator[List[Call], Results, Dict[str, Any]]:
         chronic = {d for d, s in bids_before["per_dsp"].items() if s["timeout_share"] >= 0.9}
         rising = {d: s for d, s in bids_after["per_dsp"].items() if d not in chronic and s["timeout_share"] - bids_before["per_dsp"].get(d, {}).get("timeout_share", 0) > 0.3}
         budgets = bids_after["dsp_timeout_ms"]
-        cut_short = [d for d, s in rising.items() if (s["by_status"].get("TIMEOUT", {}).get("response_time_ms_p50") or 0) < 0.6 * budgets.get(d, 100)]
         surge = [bids_before["evidence_id"], bids_after["evidence_id"]]
         deadlines = sorted(fanout["groups"], key=lambda k: -fanout["groups"][k]["count"])
-        if rising and len(cut_short) > len(rising) / 2:
+        deadline = float(deadlines[0]) if deadlines and deadlines[0] not in ("None", "") else None
+        # A TIMEOUT that lands at the global deadline, below the DSP's own
+        # budget, was cut by the deadline: the DSP's real latency is unknown.
+        censored = [
+            d for d, st in rising.items()
+            if deadline and deadline < budgets.get(d, 100) and abs(_timeout_p50(st) - deadline) <= 0.15 * deadline
+        ]
+        # ...but a DSP that used to answer well inside that deadline and now
+        # hits it did get slower.
+        slowed = [
+            d for d in censored
+            if (_answer_p50(bids_before["per_dsp"].get(d)) or deadline) < 0.7 * deadline
+        ]
+        if rising and len(censored) > len(rising) / 2:
             add("config_regression", 0.5, surge + [fanout["evidence_id"]],
-                f"{len(rising)} DSPs went from answering to timing out, but their TIMEOUTs land at "
-                f"~{statistics.median(rising[d]['by_status']['TIMEOUT']['response_time_ms_p50'] for d in cut_short):.0f}ms, "
-                f"well inside their own budgets; fan-outs ran under a global deadline of {deadlines[0] if deadlines else '?'}ms")
-            refute("external_dsp_latency", surge)
-            deep_trace = fanout["groups"][deadlines[0]]["slowest_trace"] if deadlines else deep_trace
+                f"{len(rising)} DSPs went from answering to timing out, and their TIMEOUTs land at "
+                f"~{statistics.median(_timeout_p50(rising[d]) for d in censored):.0f}ms: the global deadline of "
+                f"{deadline:.0f}ms, below their own budgets, so the deadline is cutting the calls")
+            deep_trace = fanout["groups"][deadlines[0]]["slowest_trace"]
+            if slowed:
+                add("external_dsp_latency", 0.45, surge,
+                    f"{', '.join(slowed)} answered in ~{statistics.median(_answer_p50(bids_before['per_dsp'][d]) for d in slowed):.0f}ms "
+                    f"before and now never finish inside {deadline:.0f}ms, so they slowed down too; how slow is hidden by the cut",
+                    comp=", ".join(slowed))
+                censored_conflict = True
+            else:
+                refute("external_dsp_latency", surge)
         elif rising:
             add("external_dsp_latency", 0.5, surge,
                 f"{len(rising)} DSPs ({', '.join(sorted(rising))}) went from answering to timing out at their full "
@@ -187,7 +219,10 @@ def policy() -> Generator[List[Call], Results, Dict[str, Any]]:
         for c in ranked
     ]
     reason = ""
-    if not ranked or scores[ranked[0]] < 0.5:
+    if censored_conflict:
+        reason = ("the deadline cut hides how slow the bidders now are, so the evidence cannot say whether the "
+                  "deploy's shorter deadline or the slower bidders would break auctions on their own")
+    elif not ranked or scores[ranked[0]] < 0.5:
         reason = "no cause is supported strongly enough"
     elif len(ranked) > 1 and scores[ranked[0]] - scores[ranked[1]] < 0.15:
         reason = f"{ranked[0]} and {ranked[1]} are about equally supported"

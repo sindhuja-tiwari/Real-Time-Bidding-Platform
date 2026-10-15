@@ -27,7 +27,7 @@ import time
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Awaitable, Dict, List, Optional
 
 import httpx
 import yaml
@@ -66,14 +66,18 @@ def _append_jsonl(path: Path, record: Dict[str, Any]) -> None:
 
 
 class ScenarioRun:
-    def __init__(self, scenario: Scenario, stack: Stack, time_scale: float = 1.0):
+    # Seconds of traffic after the incident phase; subclasses use it for
+    # remediation experiments.
+    extra_seconds: float = 0.0
+
+    def __init__(self, scenario: Scenario, stack: Stack, time_scale: float = 1.0, run_dir: Optional[Path] = None):
         self.scenario = scenario
         self.stack = stack
         self.time_scale = time_scale
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         self.run_id = f"{stamp}-{scenario.id}"
         self.incident_id = "inc-" + hashlib.sha1(self.run_id.encode()).hexdigest()[:10]
-        self.dir = RUNS_DIR / self.run_id
+        self.dir = run_dir or RUNS_DIR / self.run_id
         self.observed = self.dir / "observed"
         self.truth = self.dir / "ground_truth"
         self.deploy_state: DeployState
@@ -125,6 +129,13 @@ class ScenarioRun:
             await asyncio.to_thread(self._apply_dsp_config, index, step)
         self.step_times[index] = [started, time.time()]
 
+    def _after_seed(self) -> None:
+        """Hook: runs once the platform is seeded, before any traffic."""
+
+    def _extra_tasks(self, incident_start: float, incident_end: float) -> List[Awaitable[None]]:
+        """Hook: more coroutines to run alongside the scenario's steps."""
+        return []
+
     async def _run_steps(self, incident_start: float) -> None:
         await asyncio.gather(*(self._run_step(i, s, incident_start) for i, s in enumerate(self.scenario.steps)))
 
@@ -159,6 +170,7 @@ class ScenarioRun:
         self.stack.reset()
         ad_slot_id = self.stack.seed()
         self._event("seeded", ad_slot_id=ad_slot_id)
+        self._after_seed()
 
         # Settings missing from an older .env fall back to .env.example, which
         # matches the platform's built-in defaults.
@@ -181,7 +193,8 @@ class ScenarioRun:
         _write_json(self.truth / "dsp_config_before.json", dsp_configs())
 
         baseline_s = self._scaled(s.traffic.baseline_seconds)
-        total_s = baseline_s + self._scaled(s.traffic.incident_seconds)
+        incident_s = self._scaled(s.traffic.incident_seconds)
+        total_s = baseline_s + incident_s + self.extra_seconds
         t_start = time.time()
         incident_start = t_start + baseline_s
         self._event("traffic_start", rps=rps, baseline_seconds=baseline_s, total_seconds=total_s)
@@ -192,7 +205,11 @@ class ScenarioRun:
                     self.run_id, ad_slot_id, rps, total_s, s.traffic.publishers, s.traffic.client_timeout_seconds
                 )
             )
-            await asyncio.gather(self._run_steps(incident_start), self._scrape_metrics(t_start + total_s))
+            await asyncio.gather(
+                self._run_steps(incident_start),
+                self._scrape_metrics(t_start + total_s),
+                *self._extra_tasks(incident_start, incident_start + incident_s),
+            )
             return await load
 
         outcomes = asyncio.run(drive())
