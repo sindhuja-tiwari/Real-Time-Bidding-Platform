@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.core.config import get_settings
+from app.core.tracing import tracer
 
 settings = get_settings()
 
@@ -28,6 +29,13 @@ AsyncSessionLocal = async_sessionmaker(
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as session:
+        # Check the connection out up front (the first query would anyway) so
+        # time spent waiting on an exhausted pool shows up as its own span.
+        pool = engine.sync_engine.pool
+        with tracer.start_as_current_span("db.pool.acquire") as span:
+            span.set_attribute("db.pool.size", pool.size())
+            span.set_attribute("db.pool.checked_out_before", pool.checkedout())
+            await session.connection()
         try:
             yield session
         except Exception:

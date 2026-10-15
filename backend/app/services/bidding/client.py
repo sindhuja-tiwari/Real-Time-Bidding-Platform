@@ -28,6 +28,7 @@ import httpx
 
 from app.core.logging import get_logger
 from app.core.metrics import DSP_ERROR_TOTAL, DSP_RESPONSE_LATENCY_MS, DSP_TIMEOUT_TOTAL
+from app.core.tracing import tracer
 from app.models.dsp import DSP
 from app.services.bidding.types import BidStatus, RawBid
 
@@ -66,6 +67,18 @@ class BidRequestContext:
 
 
 async def _call_one_dsp(
+    client: httpx.AsyncClient, dsp: DSP, ctx: BidRequestContext
+) -> RawBid:
+    with tracer.start_as_current_span("dsp.bid") as span:
+        span.set_attribute("dsp.name", dsp.name)
+        span.set_attribute("dsp.timeout_ms", dsp.timeout_ms)
+        bid = await _call_one_dsp_untraced(client, dsp, ctx)
+        span.set_attribute("dsp.outcome", bid.status.value)
+        span.set_attribute("dsp.response_time_ms", bid.response_time_ms)
+        return bid
+
+
+async def _call_one_dsp_untraced(
     client: httpx.AsyncClient, dsp: DSP, ctx: BidRequestContext
 ) -> RawBid:
     start = time.perf_counter()
@@ -157,9 +170,24 @@ async def collect_bids(
     enforce a hard global deadline. Always returns len(dsps) results -- a
     DSP that never responds in time shows up as a TIMEOUT bid, not a missing
     entry, so downstream logging/analytics has a complete picture."""
+    with tracer.start_as_current_span("dsp.fanout") as span:
+        span.set_attribute("auction.global_timeout_ms", global_timeout_ms)
+        span.set_attribute("dsp.count", len(dsps))
+        results, deadline_hit = await _collect_bids(dsps, ctx, global_timeout_ms, http_client)
+        span.set_attribute("dsp.deadline_hit", deadline_hit)
+        span.set_attribute("dsp.timeouts", sum(r.status == BidStatus.TIMEOUT for r in results))
+        return results
+
+
+async def _collect_bids(
+    dsps: list[DSP],
+    ctx: BidRequestContext,
+    global_timeout_ms: int,
+    http_client: httpx.AsyncClient,
+) -> tuple[list[RawBid], bool]:
     tasks = [asyncio.create_task(_call_one_dsp(http_client, dsp, ctx)) for dsp in dsps]
     if not tasks:
-        return []
+        return [], False
 
     _, pending = await asyncio.wait(tasks, timeout=global_timeout_ms / 1000)
     if pending:
@@ -202,4 +230,4 @@ async def collect_bids(
                     status=BidStatus.INVALID,
                 )
             )
-    return final
+    return final, bool(pending)
