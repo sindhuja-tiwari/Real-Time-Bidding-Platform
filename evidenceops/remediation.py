@@ -205,8 +205,9 @@ def plan(report: Dict[str, Any], ev: RunEvidence) -> Optional[Dict[str, Any]]:
         }
     if category == "missing_index":
         applied = [m for d in ev.deployments for m in d.get("migrations") or []]
-        text = (top.get("component") or "") + " " + top.get("statement", "")
-        named = [m for m in applied if m in text] or applied
+        # The component names the suspect; the statement may also mention
+        # migrations it ruled out.
+        named = [m for m in applied if m in (top.get("component") or "")] or [m for m in applied if m in top.get("statement", "")] or applied
         if not named:
             return None
         return {

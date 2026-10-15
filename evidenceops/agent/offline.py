@@ -314,9 +314,15 @@ def policy() -> Generator[List[Call], Results, Dict[str, Any]]:
                 idx = (yield [("db_indexes", {"table": table})])[0]
                 add("missing_index", 0.05, [idx["evidence_id"]],
                     f"{table} now has {len(idx['indexes'].get(table, []))} index(es): {'; '.join(idx['indexes'].get(table, []))[:200]}")
-                for m in migrated:
+                # Migrations are known only by name: the one named for the hot
+                # table is the suspect; the rest are noted as unrelated.
+                suspects = [m for m in migrated if table in m] or migrated
+                for m in suspects:
                     add("missing_index", 0.2, [ids["deploys"]], f"the deploy just before the onset ran migration {m}",
                         comp=f"{table} index lost in migration {m}")
+                others = [m for m in migrated if m not in suspects]
+                if others:
+                    sc.why["missing_index"].append(f"the same deploy's other migrations ({', '.join(others)}) do not touch {table}")
                 refute("db_pool_exhaustion", [scans_after["evidence_id"], conns["evidence_id"]], 0.4,
                        "connections are held by slow scans, so the pool wait is a consequence")
         for setting, c in changed.items():

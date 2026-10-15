@@ -133,8 +133,12 @@ def _show(proposal: Dict[str, Any]) -> None:
         if c["kind"] == "deploy_setting":
             note = " (rollback)" if c.get("rolled_back") else ""
             print(f"  - set {c['setting']}={c['value']}{note}")
-        else:
+        elif c["kind"] == "dsp_timeout_ms":
             print(f"  - set timeout_ms={c['value']} on {', '.join(c['dsps'])}")
+        elif c["kind"] == "rollback_migration":
+            print(f"  - roll back migration {c['migration']}")
+        elif c["kind"] == "skip_stuck_message":
+            print(f"  - move {', '.join(c['groups'])} one message past their committed offset")
 
 
 def _cmd_remediate(args: argparse.Namespace) -> int:
@@ -142,7 +146,11 @@ def _cmd_remediate(args: argparse.Namespace) -> int:
 
     for run_dir in _run_dirs(args.runs):
         if not args.approve:
-            proposal = remediation.propose(run_dir, args.method)
+            try:
+                proposal = remediation.propose(run_dir, args.method)
+            except SystemExit as exc:
+                print(exc)
+                continue
             _show(proposal)
             print(f"  awaiting approval: rerun with --approve 'Your Name' to test it in a disposable sandbox")
             continue

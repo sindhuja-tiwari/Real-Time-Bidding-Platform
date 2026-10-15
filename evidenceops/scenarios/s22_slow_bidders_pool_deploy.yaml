@@ -20,14 +20,14 @@ steps:
       DB_MAX_OVERFLOW: "15"
   - at: 10
     action: dsp_config
-    dsps: [dsp-b, dsp-c, dsp-d, dsp-e]
+    dsps: [dsp-a, dsp-b, dsp-d, dsp-e]
     set:
       latency_ms: 140
       latency_jitter_ms: 20
 
 ground_truth:
   category: external_dsp_latency
-  component: external DSPs DSP-B, DSP-C, DSP-D, DSP-E
+  component: external DSPs DSP-A, DSP-B, DSP-D, DSP-E
   summary: >
     The deploy moved pool capacity from 20+10 to 15+15, the same total, and
     the platform stayed healthy. Ten seconds later four bidders slowed past
@@ -43,5 +43,5 @@ ground_truth:
     description: Raise the slowed DSPs' timeouts and the global deadline to 200ms.
     changes:
       - {kind: deploy_setting, setting: AUCTION_GLOBAL_TIMEOUT_MS, value: "200"}
-      - {kind: dsp_timeout_ms, dsps: [DSP-B, DSP-C, DSP-D, DSP-E], value: "200"}
+      - {kind: dsp_timeout_ms, dsps: [DSP-A, DSP-B, DSP-D, DSP-E], value: "200"}
     expected_min_success_rate: 0.9
