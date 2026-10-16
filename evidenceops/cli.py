@@ -40,11 +40,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
             result = run_scenario(s, stack, time_scale=0.5 if args.quick else 1.0)
             results.append(result)
             status = "REPRODUCED" if result["passed"] else "NOT REPRODUCED"
-            print(
-                f"    {status}: success rate {result['baseline_success_rate']:.3f} -> "
-                f"{result['incident_success_rate']:.3f}  ({result['run_dir']})",
-                flush=True,
-            )
+            if result.get("alert", "auction_success_rate") == "auction_success_rate":
+                measured = f"success rate {result['baseline_success_rate']:.3f} -> {result['incident_success_rate']:.3f}"
+            else:
+                measured = f"analytics drift {result['baseline_analytics_drift']} -> {result['incident_analytics_drift']} auctions"
+            print(f"    {status}: {measured}  ({result['run_dir']})", flush=True)
     finally:
         if not args.keep_up:
             stack.down()
@@ -133,8 +133,12 @@ def _show(proposal: Dict[str, Any]) -> None:
         if c["kind"] == "deploy_setting":
             note = " (rollback)" if c.get("rolled_back") else ""
             print(f"  - set {c['setting']}={c['value']}{note}")
-        else:
+        elif c["kind"] == "dsp_timeout_ms":
             print(f"  - set timeout_ms={c['value']} on {', '.join(c['dsps'])}")
+        elif c["kind"] == "rollback_migration":
+            print(f"  - roll back migration {c['migration']}")
+        elif c["kind"] == "skip_stuck_message":
+            print(f"  - move {', '.join(c['groups'])} one message past their committed offset")
 
 
 def _cmd_remediate(args: argparse.Namespace) -> int:
@@ -142,7 +146,11 @@ def _cmd_remediate(args: argparse.Namespace) -> int:
 
     for run_dir in _run_dirs(args.runs):
         if not args.approve:
-            proposal = remediation.propose(run_dir, args.method)
+            try:
+                proposal = remediation.propose(run_dir, args.method)
+            except SystemExit as exc:
+                print(exc)
+                continue
             _show(proposal)
             print(f"  awaiting approval: rerun with --approve 'Your Name' to test it in a disposable sandbox")
             continue
@@ -153,8 +161,13 @@ def _cmd_remediate(args: argparse.Namespace) -> int:
         print(f"  approved by {proposal['approved_by']}; rebuilding a disposable platform to test it", flush=True)
         result = run_experiment(run_dir, proposal, time_scale=0.5 if args.quick else 1.0)
         print(
-            f"  {result['verdict'].upper()}: baseline {result['baseline_success_rate']:.3f}, "
-            f"incident {result['incident_success_rate']:.3f}, after remediation {result['recovered_success_rate']:.3f}",
+            f"  {result['verdict'].upper()}: " + (
+                f"baseline {result['baseline_success_rate']:.3f}, incident {result['incident_success_rate']:.3f}, "
+                f"after remediation {result['recovered_success_rate']:.3f}"
+                if "recovered_success_rate" in result else
+                f"analytics drift {result['incident_analytics_drift']} during the incident, "
+                f"{result['recovered_analytics_drift']} after remediation ({result['recovery_target']})"
+            ),
             flush=True,
         )
     return 0

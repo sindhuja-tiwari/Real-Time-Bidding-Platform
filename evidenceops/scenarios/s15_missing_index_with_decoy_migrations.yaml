@@ -1,0 +1,44 @@
+id: s15-missing-index-among-three-migrations
+title: A release ships three migrations and one of them loses an index
+
+report: >
+  Auction success rate dropped sharply shortly after the auction backend was
+  deployed this afternoon. Identify the likely cause, show the supporting
+  evidence, and test a remediation without touching the live system.
+
+setup:
+  history_auctions: 2000000
+
+traffic:
+  rps: 24
+  baseline_seconds: 40
+  incident_seconds: 60
+
+steps:
+  - at: 0
+    action: deploy
+    version: 1.6.0
+    migrations: [0004_bid_created_at_index, 0004_auction_request_id_collation, 0005_campaign_bid_floor_check]
+    env:
+      REDIS_CACHE_TTL_SECONDS: "45"
+
+ground_truth:
+  category: missing_index
+  component: auction.request_id index (dropped by migration 0004_auction_request_id_collation)
+  summary: >
+    Of the three migrations in 1.6.0, one adds a harmless index on bid,
+    one adds an unvalidated check constraint, and one drops the unique
+    constraint on auction.request_id, turning every idempotency lookup into a
+    sequential scan over two million rows.
+  causal_steps: [0]
+  decoy_steps: []
+  causal_settings: []
+  decoy_settings: [REDIS_CACHE_TTL_SECONDS]
+  distinguishing_evidence:
+    - sequential scans on auction, not bid or campaign
+    - the slow statement filters auction by request_id
+  remediation:
+    description: Roll back migration 0004_auction_request_id_collation.
+    changes:
+      - {kind: rollback_migration, migration: 0004_auction_request_id_collation}
+    expected_min_success_rate: 0.9

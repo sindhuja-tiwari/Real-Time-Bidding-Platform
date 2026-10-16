@@ -21,3 +21,9 @@ services:
     depends_on:
       otel-collector:
         condition: service_started
+
+  # The worker crashes when a consumer dies (e.g. on a message it cannot
+  # deserialize); restart it so a poison message shows up as a crash loop
+  # rather than a single silent stop.
+  worker:
+    restart: unless-stopped

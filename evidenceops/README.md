@@ -10,10 +10,10 @@ The target question:
 > show the supporting evidence, and test a remediation without touching the
 > live system.
 
-This directory currently holds **milestones 1 to 4**:
+This directory currently holds **milestones 1 to 5**:
 
-- a reproducible incident harness with three injected failures and recorded
-  ground truth,
+- a reproducible incident harness with 22 injected incidents across six root
+  causes, each with recorded ground truth,
 - OpenTelemetry traces from the platform,
 - read-only diagnostic tools over a recorded run,
 - a tool-using investigator (Claude) that has to cite evidence for every claim,
@@ -21,9 +21,8 @@ This directory currently holds **milestones 1 to 4**:
   log-only prompt,
 - approval-gated remediation experiments in a disposable copy of the
   platform, and an ambiguous scenario where abstaining is the right answer,
-- a grader that scores any investigation method against ground truth.
-
-The larger scenario suite comes next (see [Roadmap](#roadmap)).
+- a grader that scores any investigation method against ground truth, and
+  [results across the whole suite](#results-across-the-suite).
 
 ## Quick start
 
@@ -35,7 +34,7 @@ pip install -r evidenceops/requirements.txt
 python -m evidenceops list          # scenarios and their root-cause category
 python -m evidenceops validate      # static checks, no Docker needed
 python -m evidenceops run s02-global-timeout-misconfigured
-python -m evidenceops run --all     # every scenario, about 3 minutes each
+python -m evidenceops run --all     # every scenario, 3 to 5 minutes each (about 90 minutes)
 python -m evidenceops investigate   # run the fixed workflow on every recorded run
 python -m evidenceops investigate --method agent_offline   # no API key needed
 python -m evidenceops investigate --method agent           # needs ANTHROPIC_API_KEY
@@ -66,10 +65,26 @@ your own Compose overrides, such as prebuilt images, on top of the harness's.
 3. **Baseline.** Open-loop auction traffic at a fixed rate from 20 simulated
    publishers. Open loop means requests keep arriving on schedule even when the
    platform slows down, like real publisher traffic.
-4. **Incident.** The scenario's steps fire at their offsets: deployments and
-   external DSP degradation, some causal and some decoys.
+4. **Incident.** The scenario's steps fire at their offsets, some causal and
+   some decoys. A step is one of:
+   - `deploy`: change allowlisted settings on backend and worker, optionally
+     running named schema migrations first (`faults.MIGRATIONS`);
+   - `dsp_config`: degrade simulated external bidders;
+   - `kafka_publish`: publish one of the fixed malformed messages in
+     `faults.POISON_TEMPLATES` to `auction-events`, as a buggy producer would;
+   - `kafka_replay`: rewind a worker consumer group's offsets by some minutes,
+     as an operator replaying a topic would.
+
+   A scenario can also ask for `setup.history_auctions`: old auctions written
+   before traffic starts, so the auction table is large enough for a missing
+   index to matter.
 5. **Capture** logs, read-only database exports, metrics, and per-request
    outcomes, then **verify** the incident actually happened.
+
+Two kinds of alert open an incident. `auction_success_rate` is verified by a
+drop in success rate. `analytics_backlog` and `analytics_overcount` are
+verified by the analytics rollup drifting at least 300 auctions behind, or
+ahead of, the auction table while auctions themselves stay healthy.
 
 Success means HTTP 201 with auction status `COMPLETED` within the
 publisher's 2 second timeout.
@@ -83,7 +98,11 @@ runs/<run_id>/
     deployments.jsonl                deployment log, decoy changes included
     logs/<service>.log               container logs with timestamps
     db/auctions.csv, bids.csv, ...   read-only table exports
-    db/pg_stat_activity.samples.jsonl  connection states every 5s
+    db/indexes.csv                   index definitions at the end of the run
+    db/<query>.samples.jsonl         every 5s: connection states, running
+                                     statements, table scan counters, and
+                                     auction table vs analytics rollup counts
+    kafka/consumer_groups.samples.jsonl  consumer offsets and lag every 10s
     metrics/scrapes.jsonl            backend /metrics every 5s
     traces/spans.otlp.jsonl          OpenTelemetry spans (OTLP JSON)
   investigations/<method>.json       reports written by `investigate`
@@ -96,46 +115,69 @@ runs/<run_id>/
 ```
 
 The split matters for evaluation. An investigator gets `observed/` only.
-`incident.json` uses an opaque incident id, and all three scenarios share the
-same report text, so nothing outside the evidence hints at the cause. Decoy
+`incident.json` uses an opaque incident id, and all scenarios with the same
+alert share the same report text, so nothing outside the evidence hints at the
+cause. Decoy
 config changes ride along in the same deployments as the real cause.
 
 ## Scenarios
 
-All three produce the same alert, a sharp success-rate drop right after a
-deploy, so an investigator has to use the evidence to tell them apart.
+22 scenarios, six root causes, three kinds of alert. Every scenario with the
+same alert shares one report text, and most carry decoys: harmless settings in
+the same deploy, an unrelated deploy just before the onset, extra migrations,
+or a resized pool that looks relevant. Two are ambiguous on purpose.
 
-| Scenario | Root cause | What separates it from the others |
+| Root cause | Scenarios | What has to be told apart |
 |---|---|---|
-| `s01-slow-external-bidders` | Four external DSPs slow to ~95–145ms, past their 100ms timeout. The deploy 12s earlier only changed a cache TTL and an admin rate limit. | TIMEOUT bids at ~100ms (the per-DSP budget), `dsp_timeout` log events, drop starts after the deploy rather than at it |
-| `s02-global-timeout-misconfigured` | Deploy sets `AUCTION_GLOBAL_TIMEOUT_MS` from 100 to 15, next to two harmless changes. | TIMEOUT bids at exactly 15ms, `auction_global_timeout` with `deadline_ms=15`, server duration falls instead of rising |
-| `s03-db-pool-exhaustion` | Deploy shrinks the DB pool from 20+10 to 2+0 while each auction holds a connection through the ~100ms DSP fan-out. | Client latency in seconds while server `duration_ms` stays ~100ms, DSP bids still VALID, exactly 2 connections `idle in transaction` |
-
-s01 vs s02 is the "slow bidder or our own config?" distinction, and s01 vs
-s03 is the "slow external bidder or database bottleneck?" distinction from the
-project brief.
+| `external_dsp_latency` | s01, s06, s07, s22 | slow bidders vs a deploy that landed just before; one variant has no deploy at all |
+| `config_regression` | s02, s09, s10, s11 | a bad deadline or rate limit vs harmless settings in the same deploy, or the earlier of two deploys |
+| `db_pool_exhaustion` | s03, s12, s13, s14 | a starved app pool (Postgres idle) vs slow queries; one variant fails fast after 1s instead of queueing |
+| `missing_index` | s05, s15, s16 | a migration that drops an index on a 2M-row table vs the pool it exhausts, a pool resize, and decoy migrations |
+| `poison_message` | s08, s17, s18 | an undecodable message crash-looping the worker, or rejected messages stalling it in retries, vs a deploy that restarted it |
+| `duplicate_delivery_idempotency` | s19, s20 | a consumer replay double-counting in a non-idempotent rollup vs a worker deploy |
+| ambiguous | s04, s21 | a shorter deadline and slower bidders at the same moment; telemetry cannot say which would break auctions alone |
 
 Each scenario's `ground_truth` names the root-cause category (from a fixed
 taxonomy in `scenario.py`), the causal and decoy steps and settings, the
-evidence that distinguishes it, and the remediation expected to restore
-success above a threshold. Remediations are recorded now and will be executed
-in a sandbox in milestone 4.
+evidence that distinguishes it, and the remediation expected to fix it.
 
 ### Measured results
 
-One run of `python -m evidenceops run --all` on a 4-core Linux machine:
+One run of every scenario on a 4-core Linux machine, with each method's top
+answer (✓ correct; on an ambiguous scenario, abstaining is correct):
 
-| Scenario | Baseline success | Incident success | Evidence observed in the run |
-|---|---|---|---|
-| s01 slow bidders | 100.0% | 0.0% | All four degraded DSPs' bids become TIMEOUT at a median 100ms; 4,299 `dsp_timeout` log events; success back at 100% for the 10s after the deploy, then the collapse |
-| s02 global timeout | 100.0% | 2.1% | Every DSP's TIMEOUT bids sit at exactly 15ms; 1,057 `auction_global_timeout` events with `deadline_ms=15`; median auction duration falls from 115ms to 20ms |
-| s03 DB pool | 100.0% | 0.1% | Publishers time out at 2s while DSP bids stay VALID at normal latency; QueuePool timeout errors in the backend log; Postgres connections drop to a handful |
+| Scenario | Alert | True cause | Measured | Fixed workflow | agent_offline |
+|---|---|---|---|---|---|
+| `s01-slow-external-bidders`: External bidders slow down right after an unrelated deploy | success rate | `external_dsp_latency` | 100.0% → 0.3% | `external_dsp_latency` ✓ | `external_dsp_latency` ✓ |
+| `s02-global-timeout-misconfigured`: A deploy shortens the auction deadline to 15ms | success rate | `config_regression` | 99.9% → 3.5% | `config_regression` ✓ | `config_regression` ✓ |
+| `s03-db-pool-exhaustion`: A deploy shrinks the database connection pool below peak demand | success rate | `db_pool_exhaustion` | 100.0% → 0.0% | `db_pool_exhaustion` ✓ | `db_pool_exhaustion` ✓ |
+| `s04-ambiguous-deadline-and-slow-bidders`: A shorter deadline ships just as the bidders slow down | success rate | ambiguous: `config_regression` / `external_dsp_latency` | 100.0% → 0.0% | abstains ✓ | abstains ✓ |
+| `s05-missing-index-after-migration`: A schema migration drops the index behind the idempotency lookup | success rate | `missing_index` | 99.9% → 0.0% | `db_pool_exhaustion` ✗ | `missing_index` ✓ |
+| `s06-bidders-slow-after-cache-deploy`: The healthy bidders slow past their timeout just after a cache-tuning deploy | success rate | `external_dsp_latency` | 99.5% → 0.0% | `external_dsp_latency` ✓ | `external_dsp_latency` ✓ |
+| `s07-bidders-degrade-in-stages`: Every bidder degrades in two stages with no deploy at all | success rate | `external_dsp_latency` | 99.5% → 0.0% | `external_dsp_latency` ✓ | `external_dsp_latency` ✓ |
+| `s08-poison-message-crash-loop`: A malformed event crash-loops the worker and analytics stops updating | analytics behind | `poison_message` | drift 1 → 1096 | `poison_message` ✓ | `poison_message` ✓ |
+| `s09-publisher-rate-limit-lowered`: A deploy lowers the per-publisher rate limit and turns traffic away | success rate | `config_regression` | 99.5% → 0.0% | abstains ✗ | `config_regression` ✓ |
+| `s10-deadline-cut-with-pool-increase`: A deploy shortens the auction deadline and also grows the DB pool | success rate | `config_regression` | 99.6% → 47.7% | `config_regression` ✓ | `config_regression` ✓ |
+| `s11-second-of-two-deploys-cuts-deadline`: Two deploys land close together and only the second one is bad | success rate | `config_regression` | 99.9% → 20.8% | `config_regression` ✓ | `config_regression` ✓ |
+| `s12-pool-too-small-for-peak`: A modest pool cut is fine at low traffic but not at today's rate | success rate | `db_pool_exhaustion` | 98.3% → 0.2% | `db_pool_exhaustion` ✓ | `db_pool_exhaustion` ✓ |
+| `s13-small-pool-fails-fast`: A small pool with a 1s checkout timeout fails auctions outright | success rate | `db_pool_exhaustion` | 99.6% → 30.6% | `db_pool_exhaustion` ✓ | `db_pool_exhaustion` ✓ |
+| `s14-pool-cut-bundled-with-deadline-raise`: A deploy shrinks the pool and also raises the auction deadline | success rate | `db_pool_exhaustion` | 100.0% → 0.0% | `db_pool_exhaustion` ✓ | `db_pool_exhaustion` ✓ |
+| `s15-missing-index-among-three-migrations`: A release ships three migrations and one of them loses an index | success rate | `missing_index` | 99.7% → 0.0% | `db_pool_exhaustion` ✗ | `missing_index` ✓ |
+| `s16-missing-index-with-pool-resize`: A migration loses an index in the same deploy that resizes the pool | success rate | `missing_index` | 100.0% → 0.0% | `db_pool_exhaustion` ✗ | `missing_index` ✓ |
+| `s17-legacy-events-retry-storm`: A burst of old-format events stalls the worker in retries | analytics behind | `poison_message` | drift 0 → 1113 | `poison_message` ✓ | `poison_message` ✓ |
+| `s18-poison-message-after-worker-deploy`: A malformed event arrives just after a deploy restarts the worker | analytics behind | `poison_message` | drift 1 → 899 | `poison_message` ✓ | `poison_message` ✓ |
+| `s19-replay-double-counts-analytics`: An operator replays the analytics consumer and the rollup double-counts | analytics overcount | `duplicate_delivery_idempotency` | drift 0 → 1002 | abstains ✗ | `duplicate_delivery_idempotency` ✓ |
+| `s20-replay-after-worker-retry-change`: A worker deploy is followed by a consumer replay that double-counts | analytics overcount | `duplicate_delivery_idempotency` | drift 0 → 1199 | abstains ✗ | `duplicate_delivery_idempotency` ✓ |
+| `s21-ambiguous-deadline-60-and-bidders-70`: The deadline drops to 60ms while bidders slow to about 70ms | success rate | ambiguous: `config_regression` / `external_dsp_latency` | 99.1% → 17.3% | abstains ✓ | abstains ✓ |
+| `s22-slow-bidders-after-pool-resize`: Bidders slow down right after a deploy resized the DB pool | success rate | `external_dsp_latency` | 99.9% → 0.0% | `external_dsp_latency` ✓ | `external_dsp_latency` ✓ |
 
 A deploy restarts the backend and costs about 7 seconds of failed requests.
 Verification only measures the incident from 5 seconds after the last causal
 step finished, so that blip never counts toward the drop. DSP-C always times
 out, even in the baseline (it is seeded at 150ms latency), which gives
-investigators some realistic background noise to rule out.
+investigators some realistic background noise to rule out. Analytics drift is
+finished auctions minus auctions counted by the rollup; it is negative for an
+overcount, and shown here as the size of the drift.
 
 ## Telemetry
 
@@ -171,6 +213,12 @@ evidence id (`E1`, `E2`, ...) that hypotheses must cite:
 | `trace_detail(trace_id)` | one trace's spans in order |
 | `log_events(service, start, end, contains)` | log events counted by kind, each with a `logs/<service>.log:<line>` reference |
 | `db_connections(start, end)` | sampled Postgres connection states and lock waits |
+| `slow_queries(start, end)` | statements seen running, grouped by shape with literals removed, and how long they had been running |
+| `table_scans(start, end)` | per-table sequential scans, rows read by them, and index scans in the window |
+| `db_indexes(table)` | index and unique-constraint definitions at the end of the window |
+| `consumer_lag(start, end)` | per consumer group: committed offset, lag, live members, where it stalled, and any rewind |
+| `analytics_consistency(start, end)` | finished auctions vs auctions counted by the analytics rollup |
+| `repeated_values(service, event, field, start, end)` | how often each value of a structured log field repeats, e.g. an auction id processed twice |
 
 ## Investigation reports and grading
 
@@ -194,8 +242,8 @@ Every method writes the same report shape (`investigation.py`):
 
 ## Baseline: fixed diagnostic workflow
 
-`baselines/fixed_workflow.py` is a runbook encoded as code. It runs the same
-10 tool calls in the same order on every incident:
+`baselines/fixed_workflow.py` is a runbook encoded as code. For a
+success-rate alert it runs the same 10 tool calls in the same order:
 
 1. Find the onset: a sustained drop below half the baseline success rate.
 2. Find deploys in the 60s before the onset.
@@ -204,9 +252,13 @@ Every method writes the same report shape (`investigation.py`):
 
 It then scores the three categories it has rules for, using fixed
 thresholds, and abstains when the best score is weak or two causes are close.
-It never asks a follow-up question of the data.
+For an analytics alert it runs a shorter fixed checklist (deployments,
+consumer lag, worker log events) with one rule: a worker that keeps failing on
+messages while a group falls behind is a poison message. It never asks a
+follow-up question of the data, and it has no rule for missing indexes or
+duplicate delivery.
 
-On a fresh `run --all` with traces enabled:
+On the original three scenarios:
 
 | Scenario | Fixed workflow's top answer | Runner-up |
 |---|---|---|
@@ -220,16 +272,13 @@ about 0.3s per investigation, no model cost.
 **Read that 3/3 with care.** The workflow's thresholds were written by someone
 who knew these three scenarios, so it is effectively fitted to them. It
 proves the evidence is sufficient and the grader works. It does not prove
-that a runbook is enough. The real comparison needs scenarios the rules were
-not written for, plus ambiguous incidents. Those come with the scenario
-expansion in milestone 5, where this baseline is expected to drop sharply:
-it has no rules at all for missing indexes, poison messages or duplicate
-delivery.
+that a runbook is enough. See [Results across the suite](#results-across-the-suite)
+for how it does on the scenarios it was not written for.
 
 ## The investigator
 
 `agent/` is a tool-using investigator. The model gets the on-call report and
-the eight read-only tools above, decides which to call, and finishes by
+the fourteen read-only tools above, decides which to call, and finishes by
 calling `submit_report` with a timeline and ranked hypotheses. The system
 prompt (`agent/spec.py`) asks it to keep several causes open, call a tool
 whose answer would separate the leading candidates before settling, treat a
@@ -294,11 +343,14 @@ Free tiers have tight rate limits, and cost is recorded as $0 for them.
 citation checks, transcript, grading) runs and is tested without a key. It is
 a rule-driven policy, not an LLM, and its scores say nothing about how the
 model will do. It works the way the system prompt asks the model to: it reads
-the symptom first (auctions stuck, or bidders not answering) and only calls
-the tools that separate the causes that symptom allows, then drills into the
-slowest trace. On the three recorded runs it gets the same 3/3 as the fixed
-workflow with 8 to 9 tool calls instead of 10. That comparison has the same
-caveat as the fixed workflow: both were written with these scenarios in view.
+the symptom first (auctions stuck, bidders not answering, requests turned
+away, analytics behind or overcounting) and only calls the tools that separate
+the causes that symptom allows, then drills into the slowest trace. When
+Postgres turns out to be busy rather than idle, for example, it asks which
+statements are running and which tables are being scanned before blaming the
+connection pool. Its rules were written with these scenarios in view, so its
+scores are an upper bound for a rule-based method, not a prediction of the
+model's.
 
 ## Baseline: log-only prompt
 
@@ -316,13 +368,17 @@ add over the logs alone.
 after a person approves it.
 
 **What can be proposed** (`remediation.py`). A proposal is a list of typed
-changes, and only three kinds exist:
+changes, and only these kinds exist:
 
 - `deploy_setting`: set an allowlisted setting to a value inside fixed bounds.
 - `rollback_setting`: restore a setting to its value before the last deploy
   that changed it, looked up in the run's deployment log.
 - `dsp_timeout_ms`: set the per-DSP timeout on named DSP rows, through a new
   admin `PATCH /api/v1/dsps/{id}` endpoint.
+- `rollback_migration`: run the fixed `down` SQL of a named migration from
+  `faults.MIGRATIONS`, and only if a deploy in this run applied it.
+- `skip_stuck_message`: stop the worker, move named consumer groups one
+  message past their committed offset, and start it again.
 
 Anything else, including a shell command, a setting outside the allowlist, or
 a value out of bounds, fails to parse and is rejected. Nothing tries to
@@ -334,7 +390,14 @@ including the baselines, a rule planner derives one from the top hypothesis:
 
 - a deploy-borne cause gets a rollback of the matching settings, never of the
   harmless decoy settings in the same deploy;
-- slow bidders get longer per-DSP timeouts and a longer deadline.
+- slow bidders get longer per-DSP timeouts and a longer deadline;
+- a missing index gets the migration named in the diagnosis rolled back;
+- a crash-looping worker gets the undecodable message skipped, and a worker
+  stalled retrying rejected messages gets `EVENT_MAX_RETRIES=0`, which
+  dead-letters them on the first failure;
+- duplicate delivery gets no proposal: the fix is code (record applied event
+  ids in the rollup transaction) plus a data rebuild, neither of which is an
+  allowlisted runtime change.
 
 When a report abstained, the proposal is marked as an **experiment** rather
 than a fix. It rolls back the suspect deploy's risky settings, so the result
@@ -353,31 +416,22 @@ prints it. `--approve "Name"` then:
 **The sandbox** (`sandbox.py`). An approved remediation runs in a freshly built
 copy of the platform with wiped volumes. The copy replays the original
 incident's scenario step for step, applies the changes once the incident is
-in full swing, and keeps traffic flowing for 45s more. The verdict needs both
+in full swing, and keeps traffic flowing for 90s more. The verdict needs both
 of these in the same experiment:
 
 - the incident reproduced, and
-- success then recovered to within 5 points of the experiment's own baseline.
+- the alerting metric recovered by the end. For success-rate alerts, success
+  over the last 30s must be within 5 points of the experiment's own
+  baseline; the first minute after the change is allowed for requests that
+  were already queued to drain. For analytics alerts, the rollup's drift in the last samples
+  must fall below a third of the alert threshold.
 
 The possible verdicts are `verified`, `not_fixed` (it reproduced but did not
 recover), or `inconclusive` (it never reproduced). `evaluate` reports the share
 of tested remediations that were verified.
 
-### Results
-
-All four proposals from `agent_offline` on the recorded runs were approved and
-tested, each in its own freshly built sandbox:
-
-| Run | Proposal | Baseline | Incident | After the change | Verdict |
-|---|---|---|---|---|---|
-| s01 slow bidders | per-DSP timeouts for DSP-A/B/D/E and the global deadline to 200ms | 99.6% | 0.0% | 99.5% | verified |
-| s02 global timeout | roll `AUCTION_GLOBAL_TIMEOUT_MS` back to 100 | 99.5% | 2.1% | 99.5% | verified |
-| s03 DB pool | roll `DB_POOL_SIZE` and `DB_MAX_OVERFLOW` back | 99.8% | 0.0% | 99.9% | verified |
-| s04 ambiguous (experiment) | roll `AUCTION_GLOBAL_TIMEOUT_MS` back to 100 | 99.9% | 0.0% | 97.2% | verified |
-
-The s04 row is the one that matters most. The investigation correctly
-refused to pick a cause from telemetry, and the experiment then showed that
-undoing the deploy alone is enough, even with the bidders still slow.
+Results for all 20 proposals are in
+[Results across the suite](#results-across-the-suite).
 
 ## Ambiguous incidents
 
@@ -403,13 +457,105 @@ On the recorded run (success 99.4% to 0%), both rule-based methods abstain:
 | fixed workflow | abstains | its two rules happen to score 0.6 and 0.5, inside its margin; its statement also wrongly calls the 80ms cut "the 100ms per-DSP budget" |
 | agent_offline | abstains | it spots that the timeouts land at the global deadline, below the per-DSP budget, and that bidders which used to answer in ~38ms now hit it |
 
+`s21-ambiguous-deadline-60-and-bidders-70` is the same trap at different
+numbers: the deadline drops to 60ms while four bidders slow to about 72ms.
+Both methods abstain on it too, and the rollback experiment recovers success
+from 11.6% to 98.9%.
+
+## Results across the suite
+
+All 22 scenarios, recorded once each and investigated by both rule-based
+methods. Run it yourself with `run --all`, `investigate` for each method, and
+`evaluate`.
+
+| | Fixed workflow | agent_offline |
+|---|---|---|
+| Top-1 accuracy (20 clear incidents) | 14/20 (70%) | 20/20 (100%) |
+| Top-3 accuracy | 70% | 100% |
+| Abstained on a clear incident | 3/20 | 0/20 |
+| Correct abstention (2 ambiguous) | 2/2 | 2/2 |
+| Unsupported diagnoses | 0 | 0 |
+| Mean tool calls | 8.6 | 8.0 |
+| Mean time to a correct diagnosis | 0.32s | 0.24s |
+| Cost | $0 | $0 |
+| Fixes verified in the sandbox | not proposed | 18/20 (90%) |
+
+**Where the runbook fails, and why.** It blames the connection pool on all
+three missing-index incidents: the pool really is exhausted, and it has no step
+that asks what the connections are busy doing. It abstains on the rate-limit
+incident because none of its rules looks at requests that never became
+auctions, and on both double-count incidents because it has no rule for
+duplicates. These are exactly the cases where the next question depends on the
+last answer.
+
+**How to read agent_offline's 100%.** Its rules were written by someone who
+had these scenarios in front of them, so treat it as an upper bound for a
+rule-based investigator and a check that the evidence is sufficient, not as a
+measurement of the model. The model's numbers come from
+`investigate --method agent` (or a free-tier provider) and the log-only
+baseline from `--method log_only`; both need an API key, and neither has been
+run for this table.
+
+### Remediation experiments
+
+Every agent_offline proposal across the suite was approved by a person and
+tested in its own freshly built sandbox:
+
+| Scenario | Change tested | Before | During | After | Verdict |
+|---|---|---|---|---|---|
+| `s01-slow-external-bidders` | `AUCTION_GLOBAL_TIMEOUT_MS=200`; timeout 200ms on DSP-A, DSP-B, DSP-D, DSP-E | 99.1% | 0.0% | 99.3% | verified |
+| `s02-global-timeout-misconfigured` | `AUCTION_GLOBAL_TIMEOUT_MS=100` (rollback) | 99.2% | 0.6% | 99.3% | verified |
+| `s03-db-pool-exhaustion` | `DB_MAX_OVERFLOW=10` (rollback); `DB_POOL_SIZE=20` (rollback) | 99.7% | 0.0% | 99.6% | verified |
+| `s04-ambiguous-deadline-and-slow-bidders` (experiment) | `AUCTION_GLOBAL_TIMEOUT_MS=100` (rollback) | 99.4% | 0.0% | 95.4% | verified |
+| `s05-missing-index-after-migration` | roll back `0004_auction_request_id_collation` | 99.6% | 0.1% | 0.0% | not fixed |
+| `s06-bidders-slow-after-cache-deploy` | `AUCTION_GLOBAL_TIMEOUT_MS=200`; timeout 200ms on DSP-A, DSP-B, DSP-D, DSP-E | 99.2% | 0.0% | 99.5% | verified |
+| `s07-bidders-degrade-in-stages` | `AUCTION_GLOBAL_TIMEOUT_MS=200`; timeout 200ms on DSP-A, DSP-B, DSP-D, DSP-E | 99.5% | 0.0% | 98.6% | verified |
+| `s08-poison-message-crash-loop` | skip the stuck message in all three groups | drift 1 | drift 1099 | drift 1 | verified |
+| `s09-publisher-rate-limit-lowered` | `RATE_LIMIT_PUBLISHER_PER_MIN=1000` (rollback) | 99.2% | 0.0% | 99.3% | verified |
+| `s10-deadline-cut-with-pool-increase` | `AUCTION_GLOBAL_TIMEOUT_MS=100` (rollback) | 99.6% | 45.6% | 99.8% | verified |
+| `s11-second-of-two-deploys-cuts-deadline` | `AUCTION_GLOBAL_TIMEOUT_MS=100` (rollback) | 99.6% | 20.5% | 100.0% | verified |
+| `s12-pool-too-small-for-peak` | `DB_MAX_OVERFLOW=10` (rollback); `DB_POOL_SIZE=20` (rollback) | 78.2% | 0.1% | 89.9% | verified |
+| `s13-small-pool-fails-fast` | `DB_MAX_OVERFLOW=10` (rollback); `DB_POOL_SIZE=20` (rollback); `DB_POOL_TIMEOUT_SECONDS=30` (rollback) | 98.7% | 24.8% | 99.8% | verified |
+| `s14-pool-cut-bundled-with-deadline-raise` | `DB_MAX_OVERFLOW=10` (rollback); `DB_POOL_SIZE=20` (rollback) | 99.6% | 0.2% | 99.8% | verified |
+| `s15-missing-index-among-three-migrations` | roll back `0004_auction_request_id_collation` | 99.8% | 0.1% | 0.0% | not fixed |
+| `s16-missing-index-with-pool-resize` | roll back `0004_auction_request_id_collation` | 99.4% | 0.0% | 98.9% | verified |
+| `s17-legacy-events-retry-storm` | `EVENT_MAX_RETRIES=0` | drift 1 | drift 1092 | drift 1 | verified |
+| `s18-poison-message-after-worker-deploy` | skip the stuck message in all three groups | drift 1 | drift 880 | drift 1 | verified |
+| `s19-replay-double-counts-analytics` | none proposed (code fix) | | | | not tested |
+| `s20-replay-after-worker-retry-change` | none proposed (code fix) | | | | not tested |
+| `s21-ambiguous-deadline-60-and-bidders-70` (experiment) | `AUCTION_GLOBAL_TIMEOUT_MS=100` (rollback) | 94.0% | 11.6% | 98.9% | verified |
+| `s22-slow-bidders-after-pool-resize` | `AUCTION_GLOBAL_TIMEOUT_MS=200`; timeout 200ms on DSP-A, DSP-B, DSP-D, DSP-E | 98.6% | 0.0% | 98.6% | verified |
+
+Two of the three missing-index fixes are recorded as not fixed, and the
+sandbox's own evidence shows why. Restoring the index works: the slow scans
+stop within seconds. But while the index was missing, hundreds of requests
+queued for a database connection, and when they are released together their
+DSP calls flood the backend's shared HTTP client. In s05 and s15 the client
+never recovers: for the rest of the run every DSP call times out after 100ms
+without the simulator ever receiving it, so auctions end `NO_BID`. In s16, and
+in an earlier attempt at s05, the same flood cleared after about 30 seconds.
+That is a second platform fault, a cascading one that the incident set off, and
+it is the reason verification runs the whole platform instead of checking only
+that the index exists. Fixing it means making the DSP client survive a burst;
+until then a backend restart is the operational fix, and restarts are not an
+allowlisted change.
+
+s12's sandbox baseline was only 78% at 32 auctions/s, close to what one
+backend process can serve, so its "verified" compares against a weaker
+baseline than the others.
+
+The two double-count incidents get no proposal: their fix is code (make the
+rollup idempotent) plus a data rebuild, which no allowlisted change can do.
+
 ## Safety model
 
 - **No command execution from scenarios.** A scenario can only `deploy`
-  (change settings from a fixed allowlist on backend and worker) or
-  `dsp_config` (change allowlisted fields of the simulated DSPs). There is no
-  shell action, and the harness invokes Docker with fixed argument lists and
-  no shell.
+  (change settings from a fixed allowlist, and run migrations chosen by name
+  from fixed SQL), `dsp_config` (change allowlisted fields of the simulated
+  DSPs), publish a named message template, or rewind an allowlisted consumer
+  group by a bounded number of minutes. No SQL, payload or command text ever
+  comes from a scenario file. There is no shell action, and the harness
+  invokes Docker with fixed argument lists and no shell.
 - **Read-only evidence.** Database exports are named queries run with
   `default_transaction_read_only=on`.
 - **Disposable environment.** Runs use their own Compose project and wipe
@@ -447,6 +593,22 @@ Small additions that keep defaults unchanged: `DB_POOL_SIZE`,
 `DB_MAX_OVERFLOW`, `DB_POOL_TIMEOUT_SECONDS`, `APP_VERSION` (shown on
 `/health`), `SEED_CAMPAIGN_BUDGET`, and `SIM_RANDOM_SEED` for the DSP simulator.
 
+Two real bugs in the worker are left in place on purpose, because the suite's
+worker incidents exercise them:
+
+- **A message that fails to decode kills the worker.** The consumers decode
+  JSON in aiokafka's `value_deserializer`, which raises inside the
+  `async for` loop, outside the retry and dead-letter path. The exception
+  ends `asyncio.gather` and the process; on restart it reads the same
+  uncommitted message and dies again. The fix is to deserialize inside the
+  handler's `try` so a bad message is dead-lettered like any other failure.
+- **The analytics rollup is not idempotent.** Kafka delivers at least once,
+  but `handle_analytics_event` adds 1 per event without recording which
+  event ids it has applied, so any redelivery is counted twice.
+
+The harness overlay gives the worker `restart: unless-stopped`, as production
+would, so the first bug shows up as a crash loop rather than a silent stop.
+
 One backend process tops out at roughly 45 auctions/s on a 4-core machine,
 CPU bound. Scenarios run at 20–30 auctions/s to stay below that.
 
@@ -459,8 +621,8 @@ CPU bound. Scenarios run at 20–30 auctions/s to stay below that.
    references, plus a log-only prompt baseline.~~
 4. ~~Sandbox remediation experiments behind an approval gate; ambiguous
    scenarios where abstaining is the right answer.~~
-5. Expand to 20–30 scenarios (missing index, poison message, duplicate
-   delivery, connection leak cascade, budget exhaustion, ...), compare the
-   investigator with both baselines on accuracy, abstention, time, tool calls
-   and cost.
+5. ~~Expand to 20–30 scenarios (missing index, poison message, duplicate
+   delivery, ...) and compare the investigator with both baselines on
+   accuracy, abstention, time, tool calls and cost.~~ The model's own numbers
+   need an API key; see [Results across the suite](#results-across-the-suite).
 6. Demo, architecture write-up, and benchmark instructions.

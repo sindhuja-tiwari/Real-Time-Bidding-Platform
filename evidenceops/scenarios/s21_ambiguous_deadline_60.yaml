@@ -1,0 +1,51 @@
+id: s21-ambiguous-deadline-60-and-bidders-70
+title: The deadline drops to 60ms while bidders slow to about 70ms
+
+report: >
+  Auction success rate dropped sharply shortly after the auction backend was
+  deployed this afternoon. Identify the likely cause, show the supporting
+  evidence, and test a remediation without touching the live system.
+
+ambiguous: true
+
+traffic:
+  rps: 20
+  baseline_seconds: 40
+  incident_seconds: 60
+
+steps:
+  - at: 0
+    action: deploy
+    version: 1.4.1
+    env:
+      AUCTION_GLOBAL_TIMEOUT_MS: "60"
+      RATE_LIMIT_ADMIN_PER_MIN: "120"
+  - at: 2
+    action: dsp_config
+    dsps: [dsp-a, dsp-b, dsp-c, dsp-d]
+    set:
+      latency_ms: 72
+      latency_jitter_ms: 4
+
+ground_truth:
+  category: config_regression
+  candidates: [config_regression, external_dsp_latency]
+  component: AUCTION_GLOBAL_TIMEOUT_MS and DSPs A-D
+  summary: >
+    The deploy cut the deadline to 60ms and, two seconds later, four bidders
+    slowed to ~72ms. Every one of their bids is cut at the 60ms deadline, so
+    the telemetry shows when they were cut but not how slow they really were.
+    Either change alone would explain the drop, and only an experiment
+    (rolling the deadline back) separates them.
+  causal_steps: [0, 1]
+  decoy_steps: []
+  causal_settings: [AUCTION_GLOBAL_TIMEOUT_MS]
+  decoy_settings: [RATE_LIMIT_ADMIN_PER_MIN]
+  distinguishing_evidence:
+    - TIMEOUTs land at the 60ms deadline, below the 100ms per-DSP budget
+    - the same DSPs answered in 25-55ms before, inside the old deadline
+  remediation:
+    description: Roll the deadline back; if success recovers, the bidders still fit their budget.
+    changes:
+      - {kind: rollback_setting, setting: AUCTION_GLOBAL_TIMEOUT_MS}
+    expected_min_success_rate: 0.9

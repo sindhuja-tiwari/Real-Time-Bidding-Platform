@@ -109,9 +109,11 @@ rtb-platform/
 ## EvidenceOps
 
 [`evidenceops/`](evidenceops/README.md) turns this platform into a test bed
-for incident investigation: reproducible injected failures (slow bidders,
-bad config deploys, DB pool exhaustion, ...) with recorded ground truth, and
-a tool-using investigator agent graded against them alongside two baselines.
+for incident investigation: 22 reproducible injected incidents (slow bidders,
+bad config deploys, DB pool exhaustion, a migration that drops an index, poison
+messages, duplicate delivery) with recorded ground truth, a tool-using
+investigator agent graded against them alongside two baselines, and
+approval-gated fixes tested in a disposable copy of the platform.
 
 ```bash
 pip install -r evidenceops/requirements.txt

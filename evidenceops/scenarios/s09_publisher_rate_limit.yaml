@@ -1,0 +1,42 @@
+id: s09-publisher-rate-limit-lowered
+title: A deploy lowers the per-publisher rate limit and turns traffic away
+
+report: >
+  Auction success rate dropped sharply shortly after the auction backend was
+  deployed this afternoon. Identify the likely cause, show the supporting
+  evidence, and test a remediation without touching the live system.
+
+traffic:
+  rps: 20
+  baseline_seconds: 40
+  incident_seconds: 60
+
+steps:
+  - at: 0
+    action: deploy
+    version: 1.2.1
+    env:
+      RATE_LIMIT_PUBLISHER_PER_MIN: "20"
+      RATE_LIMIT_ADMIN_PER_MIN: "120"
+      REDIS_CACHE_TTL_SECONDS: "45"
+
+ground_truth:
+  category: config_regression
+  component: backend setting RATE_LIMIT_PUBLISHER_PER_MIN
+  summary: >
+    Deploy v1.2.1 cut RATE_LIMIT_PUBLISHER_PER_MIN from 1000 to 20. Each of
+    the 20 publishers sends about 60 requests a minute, so two thirds of
+    requests are answered 429 before any auction runs. The auctions that do
+    run are as fast and as successful as before.
+  causal_steps: [0]
+  decoy_steps: []
+  causal_settings: [RATE_LIMIT_PUBLISHER_PER_MIN]
+  decoy_settings: [RATE_LIMIT_ADMIN_PER_MIN, REDIS_CACHE_TTL_SECONDS]
+  distinguishing_evidence:
+    - backend access logs fill with 429 responses on POST /api/v1/auctions
+    - auctions created per second fall while their durations and bid outcomes stay normal
+  remediation:
+    description: Roll RATE_LIMIT_PUBLISHER_PER_MIN back to 1000.
+    changes:
+      - {kind: rollback_setting, setting: RATE_LIMIT_PUBLISHER_PER_MIN}
+    expected_min_success_rate: 0.9

@@ -1,6 +1,6 @@
 """Remediation proposals: typed, allowlisted changes behind an approval gate.
 
-A remediation is a list of changes, each one of three kinds:
+A remediation is a list of changes, each one of these kinds:
 
 - ``deploy_setting``: set an allowlisted platform setting (redeploys
   backend and worker), e.g. ``AUCTION_GLOBAL_TIMEOUT_MS`` to ``180``.
@@ -8,6 +8,10 @@ A remediation is a list of changes, each one of three kinds:
   recent deploy that changed it (resolved against the run's deployment log).
 - ``dsp_timeout_ms``: set the per-DSP timeout on named DSP rows through the
   platform's admin API.
+- ``rollback_migration``: run the fixed ``down`` SQL of a migration from
+  ``faults.MIGRATIONS`` that a deploy in this run applied.
+- ``skip_stuck_message``: move named worker consumer groups one message
+  past their committed offset (worker stopped around it).
 
 Nothing else can be expressed, so there is nothing to sanitize: a proposal
 that does not parse into these kinds is rejected, never "best-effort" run.
@@ -25,7 +29,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from evidenceops.faults import DEPLOYABLE_SETTINGS
+from evidenceops.faults import DEPLOYABLE_SETTINGS, MIGRATIONS, REPLAYABLE_GROUPS
 from evidenceops.telemetry import RunEvidence
 
 DSP_ROW_NAMES = frozenset({"DSP-A", "DSP-B", "DSP-C", "DSP-D", "DSP-E"})
@@ -55,15 +59,22 @@ SETTING_CATEGORY = {
     "DB_POOL_SIZE": "db_pool_exhaustion",
     "DB_MAX_OVERFLOW": "db_pool_exhaustion",
     "DB_POOL_TIMEOUT_SECONDS": "db_pool_exhaustion",
+    "RATE_LIMIT_PUBLISHER_PER_MIN": "config_regression",
+    "EVENT_MAX_RETRIES": "poison_message",
+    "EVENT_RETRY_BASE_SECONDS": "poison_message",
 }
+
+CHANGE_KINDS = ("deploy_setting", "rollback_setting", "dsp_timeout_ms", "rollback_migration", "skip_stuck_message")
 
 CHANGE_SCHEMA: Dict[str, Any] = {
     "type": "object",
     "properties": {
-        "kind": {"type": "string", "enum": ["deploy_setting", "rollback_setting", "dsp_timeout_ms"]},
+        "kind": {"type": "string", "enum": list(CHANGE_KINDS)},
         "setting": {"type": "string", "description": "for deploy_setting and rollback_setting"},
         "value": {"type": "string", "description": "for deploy_setting and dsp_timeout_ms"},
         "dsps": {"type": "array", "items": {"type": "string"}, "description": "DSP names, for dsp_timeout_ms"},
+        "migration": {"type": "string", "description": "migration name from a deploy, for rollback_migration"},
+        "groups": {"type": "array", "items": {"type": "string"}, "description": "consumer groups, for skip_stuck_message"},
     },
     "required": ["kind"],
     "additionalProperties": False,
@@ -102,13 +113,26 @@ def parse_change(raw: Dict[str, Any]) -> Dict[str, Any]:
         if not TIMEOUT_RANGE_MS[0] <= value <= TIMEOUT_RANGE_MS[1]:
             raise InvalidChange(f"timeout {value}ms is outside {TIMEOUT_RANGE_MS[0]}..{TIMEOUT_RANGE_MS[1]}ms")
         return {"kind": kind, "dsps": dsps, "value": value}
+    if kind == "rollback_migration":
+        name = raw.get("migration")
+        if name not in MIGRATIONS:
+            raise InvalidChange(f"{name!r} is not a known migration")
+        return {"kind": kind, "migration": name}
+    if kind == "skip_stuck_message":
+        groups = sorted({str(g) for g in raw.get("groups") or []})
+        if not groups or not set(groups) <= REPLAYABLE_GROUPS:
+            raise InvalidChange(f"groups must be a non-empty subset of {sorted(REPLAYABLE_GROUPS)}")
+        return {"kind": kind, "groups": groups}
     raise InvalidChange(f"unknown change kind {kind!r}")
 
 
 def resolve(changes: List[Dict[str, Any]], ev: RunEvidence) -> List[Dict[str, Any]]:
     """Turn rollbacks into concrete settings using the run's deployment log."""
     out = []
+    applied = {m for d in ev.deployments for m in d.get("migrations") or []}
     for change in changes:
+        if change["kind"] == "rollback_migration" and change["migration"] not in applied:
+            raise InvalidChange(f"no deploy in this run applied {change['migration']}, so there is nothing to roll back")
         if change["kind"] != "rollback_setting":
             out.append(change)
             continue
@@ -178,6 +202,35 @@ def plan(report: Dict[str, Any], ev: RunEvidence) -> Optional[Dict[str, Any]]:
             "purpose": "fix",
             "changes": [parse_change({"kind": "rollback_setting", "setting": s}) for s in targets],
             "rationale": f"roll back the {category} settings changed by the suspect deploy: {', '.join(targets)}",
+        }
+    if category == "missing_index":
+        applied = [m for d in ev.deployments for m in d.get("migrations") or []]
+        # The component names the suspect; the statement may also mention
+        # migrations it ruled out.
+        named = [m for m in applied if m in (top.get("component") or "")] or [m for m in applied if m in top.get("statement", "")] or applied
+        if not named:
+            return None
+        return {
+            "source": "planner",
+            "purpose": "fix",
+            "changes": [parse_change({"kind": "rollback_migration", "migration": m}) for m in named],
+            "rationale": f"roll back the migration(s) that lost the index: {', '.join(named)}",
+        }
+    if category == "poison_message":
+        text = ((top.get("component") or "") + " " + top.get("statement", "")).lower()
+        groups = sorted(REPLAYABLE_GROUPS)
+        if "crash" in text or "deserializ" in text or "decode" in text:
+            return {
+                "source": "planner",
+                "purpose": "fix",
+                "changes": [parse_change({"kind": "skip_stuck_message", "groups": groups})],
+                "rationale": "move every consumer group one message past the message it cannot decode",
+            }
+        return {
+            "source": "planner",
+            "purpose": "fix",
+            "changes": [parse_change({"kind": "deploy_setting", "setting": "EVENT_MAX_RETRIES", "value": "0"})],
+            "rationale": "dead-letter rejected messages on the first failure so they stop holding the consumers",
         }
     if category == "external_dsp_latency":
         named = sorted(d for d in DSP_ROW_NAMES if d in (top.get("component") or "") + " " + top.get("statement", ""))

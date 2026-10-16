@@ -20,6 +20,10 @@ the ad slot and campaigns from Postgres (via a SQLAlchemy connection pool), fans
 out bid requests to external DSPs in parallel under a global deadline, picks a
 winner, reserves campaign budget, and publishes events to Kafka for a worker.
 A request succeeds when the auction COMPLETES within the client's 2s timeout.
+The worker runs three Kafka consumer groups on the auction-events topic
+(analytics, audit, budget); the analytics consumer maintains a per-minute
+rollup that the analytics dashboard reads. Deploys can change settings and run
+schema migrations.
 
 You can only read recorded telemetry for the incident window, through the tools
 provided. Every tool result carries an `evidence_id` (E1, E2, ...). Nothing you
@@ -74,15 +78,16 @@ def _tool(name: str, description: str, properties: Dict[str, Any], required: Lis
 TELEMETRY_TOOLS: List[Dict[str, Any]] = [
     _tool(
         "alert_timeline",
-        "The alert that opened the incident: the on-call report text, the telemetry window, and auction "
-        "success rate plus latency per 10s bucket. Call this first.",
+        "The alert that opened the incident: the on-call report text, the telemetry window, and the "
+        "alerting metric over time (auction success rate and latency per 10s bucket, or for analytics "
+        "alerts, finished auctions vs auctions counted by the analytics rollup). Call this first.",
         {},
         [],
     ),
     _tool(
         "list_deployments",
-        "Every deployment in the telemetry window with start/finish time, version, services and the "
-        "config settings it changed (from -> to).",
+        "Every deployment in the telemetry window with start/finish time, version, services, the "
+        "config settings it changed (from -> to) and any schema migrations it ran.",
         {},
         [],
     ),
@@ -142,6 +147,55 @@ TELEMETRY_TOOLS: List[Dict[str, Any]] = [
         "about every 5s from pg_stat_activity.",
         dict(_WINDOW),
         ["start", "end"],
+    ),
+    _tool(
+        "slow_queries",
+        "Statements seen running in Postgres, sampled about every 5s from pg_stat_activity and grouped "
+        "by statement shape (literals replaced by ?), with how long each had been running.",
+        dict(_WINDOW),
+        ["start", "end"],
+    ),
+    _tool(
+        "table_scans",
+        "Per-table sequential scans, rows read by sequential scans, and index scans in a window (from "
+        "pg_stat_user_tables), plus live row counts. Many sequential scans over a large table usually "
+        "mean a query has no usable index.",
+        dict(_WINDOW),
+        ["start", "end"],
+    ),
+    _tool(
+        "db_indexes",
+        "Index and unique-constraint definitions per table, captured at the end of the window.",
+        {"table": {"type": "string", "description": "optional table name, e.g. auction"}},
+        [],
+    ),
+    _tool(
+        "consumer_lag",
+        "Kafka consumer groups on the auction-events topic over time (about every 10s): committed "
+        "offset, log-end offset, lag, and whether the group had a live consumer.",
+        dict(_WINDOW),
+        ["start", "end"],
+    ),
+    _tool(
+        "analytics_consistency",
+        "Finished auctions (auction table) vs auctions counted by the worker's analytics rollup, "
+        "sampled about every 5s. A growing positive gap means analytics is falling behind; a negative "
+        "gap means events were counted more than once.",
+        dict(_WINDOW),
+        ["start", "end"],
+    ),
+    _tool(
+        "repeated_values",
+        "For one structured log event (e.g. worker `analytics_rollup_updated`), counts how many times "
+        "each value of a field (e.g. auction_id) appears. Values seen more than once mean the same "
+        "thing was processed repeatedly.",
+        {
+            "service": {"type": "string", "enum": list(LOG_SERVICES)},
+            "event": {"type": "string", "description": "the log line's `event` field"},
+            "field": {"type": "string", "description": "a field of that event, e.g. auction_id"},
+            **_WINDOW,
+        },
+        ["service", "event", "field", "start", "end"],
     ),
 ]
 

@@ -1,0 +1,49 @@
+id: s20-replay-after-worker-retry-change
+title: A worker deploy is followed by a consumer replay that double-counts
+
+alert: analytics_overcount
+
+report: >
+  The analytics dashboard shows more auctions than the platform ran: the
+  per-minute counts no longer match the auction table. Identify the likely
+  cause, show the supporting evidence, and test a remediation without
+  touching the live system.
+
+traffic:
+  rps: 20
+  baseline_seconds: 40
+  incident_seconds: 60
+
+steps:
+  - at: 0
+    action: deploy
+    version: 1.7.1
+    env:
+      EVENT_MAX_RETRIES: "5"
+      EVENT_RETRY_BASE_SECONDS: "2"
+  - at: 15
+    action: kafka_replay
+    group: analytics-consumer
+    minutes: 2
+
+ground_truth:
+  category: duplicate_delivery_idempotency
+  component: analytics consumer rollup UPSERT (not idempotent per event_id)
+  summary: >
+    v1.7.1 changed the worker's retry policy, which only matters when a
+    handler fails, and none did. Fifteen seconds later the analytics group was
+    replayed and the non-idempotent rollup counted those events twice.
+  causal_steps: [1]
+  decoy_steps: [0]
+  causal_settings: []
+  decoy_settings: [EVENT_MAX_RETRIES, EVENT_RETRY_BASE_SECONDS]
+  distinguishing_evidence:
+    - no consumer_retry warnings after the deploy
+    - committed offset moves backwards and auction_ids repeat in the rollup logs
+  remediation:
+    description: Make the handler idempotent and rebuild the affected minutes; not testable with allowlisted changes.
+    changes: []
+    expected_min_success_rate: 0.9
+
+verify:
+  min_success_rate_drop: 0

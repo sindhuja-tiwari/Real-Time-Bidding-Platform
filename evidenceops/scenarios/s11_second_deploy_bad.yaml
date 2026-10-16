@@ -1,0 +1,46 @@
+id: s11-second-of-two-deploys-cuts-deadline
+title: Two deploys land close together and only the second one is bad
+
+report: >
+  Auction success rate dropped sharply shortly after the auction backend was
+  deployed this afternoon. Identify the likely cause, show the supporting
+  evidence, and test a remediation without touching the live system.
+
+traffic:
+  rps: 20
+  baseline_seconds: 40
+  incident_seconds: 70
+
+steps:
+  - at: 0
+    action: deploy
+    version: 1.3.1
+    env:
+      REDIS_CACHE_TTL_SECONDS: "45"
+      DB_POOL_TIMEOUT_SECONDS: "20"
+  - at: 20
+    action: deploy
+    version: 1.3.2
+    env:
+      AUCTION_GLOBAL_TIMEOUT_MS: "20"
+      EVENT_MAX_RETRIES: "4"
+
+ground_truth:
+  category: config_regression
+  component: backend setting AUCTION_GLOBAL_TIMEOUT_MS
+  summary: >
+    v1.3.1 changed a cache TTL and the pool timeout and the platform stayed
+    healthy. Twenty seconds later v1.3.2 cut AUCTION_GLOBAL_TIMEOUT_MS from
+    100 to 20, which cuts off nearly every bid.
+  causal_steps: [1]
+  decoy_steps: [0]
+  causal_settings: [AUCTION_GLOBAL_TIMEOUT_MS]
+  decoy_settings: [REDIS_CACHE_TTL_SECONDS, DB_POOL_TIMEOUT_SECONDS, EVENT_MAX_RETRIES]
+  distinguishing_evidence:
+    - the drop starts after the second deploy, not the first
+    - TIMEOUTs land at ~20ms, below each DSP's budget
+  remediation:
+    description: Roll AUCTION_GLOBAL_TIMEOUT_MS back to 100.
+    changes:
+      - {kind: rollback_setting, setting: AUCTION_GLOBAL_TIMEOUT_MS}
+    expected_min_success_rate: 0.9

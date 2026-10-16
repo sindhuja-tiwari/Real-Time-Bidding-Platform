@@ -1,0 +1,42 @@
+id: s10-deadline-cut-with-pool-increase
+title: A deploy shortens the auction deadline and also grows the DB pool
+
+report: >
+  Auction success rate dropped sharply shortly after the auction backend was
+  deployed this afternoon. Identify the likely cause, show the supporting
+  evidence, and test a remediation without touching the live system.
+
+traffic:
+  rps: 20
+  baseline_seconds: 40
+  incident_seconds: 60
+
+steps:
+  - at: 0
+    action: deploy
+    version: 1.2.2
+    env:
+      AUCTION_GLOBAL_TIMEOUT_MS: "25"
+      DB_POOL_SIZE: "30"
+      DB_MAX_OVERFLOW: "15"
+
+ground_truth:
+  category: config_regression
+  component: backend setting AUCTION_GLOBAL_TIMEOUT_MS
+  summary: >
+    Deploy v1.2.2 cut AUCTION_GLOBAL_TIMEOUT_MS from 100 to 25 and also grew
+    the DB pool. Bidders answer in 25-70ms, so most are cut off at 25ms and
+    auctions end NO_BID. The larger pool is harmless: connection waits stay
+    near zero.
+  causal_steps: [0]
+  decoy_steps: []
+  causal_settings: [AUCTION_GLOBAL_TIMEOUT_MS]
+  decoy_settings: [DB_POOL_SIZE, DB_MAX_OVERFLOW]
+  distinguishing_evidence:
+    - TIMEOUTs land at ~25ms, the new global deadline, below each DSP's 100ms budget
+    - db.pool.acquire waits stay near zero after the deploy
+  remediation:
+    description: Roll AUCTION_GLOBAL_TIMEOUT_MS back to 100.
+    changes:
+      - {kind: rollback_setting, setting: AUCTION_GLOBAL_TIMEOUT_MS}
+    expected_min_success_rate: 0.9

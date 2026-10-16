@@ -7,12 +7,21 @@ turns them into changes to the running stack, and it only knows two moves:
   settings. Only keys in ``DEPLOYABLE_SETTINGS`` can change. Every deploy is
   written to the deployment log, exactly as a CD system would record it, so
   investigators see the change (and any harmless decoy changes riding along).
+  A deploy can also ship schema migrations, by name, from ``MIGRATIONS``.
 - ``dsp_config``: change how the external DSP simulator behaves, through its
   admin API. Only fields in ``DSP_FIELDS`` can change. This models a
   third-party bidder degrading; nothing about it lands in the platform's own
   deployment log.
+- ``kafka_publish``: publish one of the fixed ``POISON_TEMPLATES`` to the
+  auction-events topic, the way a buggy or foreign producer would.
+- ``kafka_replay``: rewind a consumer group's offsets by some minutes (worker
+  stopped and restarted around it), the way an operator replays a topic.
 
-There is deliberately no "run a command" action.
+A scenario may also ask for ``setup.history_auctions``: old auctions written
+before traffic starts, so tables are big enough for a missing index to matter.
+
+There is deliberately no "run a command" action, and no SQL or payload text
+ever comes from a scenario file: only names that select fixed code here.
 """
 from __future__ import annotations
 
@@ -54,12 +63,65 @@ class FaultError(ValueError):
     pass
 
 
+# Schema migrations a deploy may ship. Names look like real migration files;
+# the SQL is fixed here. "down" is what a rollback runs.
+MIGRATIONS: Dict[str, Dict[str, str]] = {
+    "0004_auction_request_id_collation": {
+        # Rebuilds request_id for a collation change and forgets the unique
+        # constraint, which was also the index behind the idempotency lookup.
+        "up": "ALTER TABLE auction DROP CONSTRAINT IF EXISTS auction_request_id_key",
+        "down": "ALTER TABLE auction ADD CONSTRAINT auction_request_id_key UNIQUE (request_id)",
+    },
+    "0004_bid_created_at_index": {
+        "up": "CREATE INDEX IF NOT EXISTS idx_bid_created_at ON bid(created_at)",
+        "down": "DROP INDEX IF EXISTS idx_bid_created_at",
+    },
+    "0005_campaign_bid_floor_check": {
+        "up": "ALTER TABLE campaign ADD CONSTRAINT ck_campaign_bid_floor_nonneg CHECK (bid_floor >= 0) NOT VALID",
+        "down": "ALTER TABLE campaign DROP CONSTRAINT IF EXISTS ck_campaign_bid_floor_nonneg",
+    },
+}
+
+# Messages a poison-message scenario can publish to auction-events.
+POISON_TEMPLATES: Dict[str, bytes] = {
+    # Truncated JSON: fails in the consumer's deserializer, before any retry
+    # or dead-letter logic runs.
+    "truncated_json": b'{"event_id": "evt_legacy", "event_type": "AUCTION_COMPLETED", "auction_id": ',
+    # Valid JSON from an older producer with no timestamp: the analytics
+    # handler raises, retries with backoff, then dead-letters it.
+    "missing_timestamp": (
+        b'{"event_id": "evt_legacy_%d", "event_type": "AUCTION_COMPLETED", '
+        b'"auction_id": "legacy-%d", "status": "COMPLETED", "latency_ms": 90}'
+    ),
+}
+
+REPLAYABLE_GROUPS = frozenset({"analytics-consumer", "audit-consumer", "budget-consumer"})
+MAX_HISTORY_AUCTIONS = 5_000_000
+
+
 @dataclass
 class DeployStep:
     at: float
     version: str
     env: Dict[str, str]
+    migrations: List[str] = field(default_factory=list)
     action: str = field(default="deploy", init=False)
+
+
+@dataclass
+class KafkaPublishStep:
+    at: float
+    template: str
+    count: int = 1
+    action: str = field(default="kafka_publish", init=False)
+
+
+@dataclass
+class KafkaReplayStep:
+    at: float
+    group: str
+    minutes: float
+    action: str = field(default="kafka_replay", init=False)
 
 
 @dataclass
@@ -70,7 +132,7 @@ class DspConfigStep:
     action: str = field(default="dsp_config", init=False)
 
 
-Step = Union[DeployStep, DspConfigStep]
+Step = Union[DeployStep, DspConfigStep, KafkaPublishStep, KafkaReplayStep]
 
 
 def parse_step(data: Dict[str, Any], where: str) -> Step:
@@ -84,7 +146,29 @@ def parse_step(data: Dict[str, Any], where: str) -> Step:
         bad = sorted(set(env) - DEPLOYABLE_SETTINGS)
         if bad:
             raise FaultError(f"{where}: settings not deployable: {bad}")
-        return DeployStep(at=at, version=version, env=env)
+        migrations = [str(m) for m in data.get("migrations") or []]
+        unknown = sorted(set(migrations) - set(MIGRATIONS))
+        if unknown:
+            raise FaultError(f"{where}: unknown migrations: {unknown}")
+        if not env and not migrations:
+            raise FaultError(f"{where}: a deploy must change settings or ship a migration")
+        return DeployStep(at=at, version=version, env=env, migrations=migrations)
+    if action == "kafka_publish":
+        template = str(data.get("template") or "")
+        if template not in POISON_TEMPLATES:
+            raise FaultError(f"{where}: template must be one of {sorted(POISON_TEMPLATES)}")
+        count = int(data.get("count", 1))
+        if not 1 <= count <= 50:
+            raise FaultError(f"{where}: count must be 1..50")
+        return KafkaPublishStep(at=at, template=template, count=count)
+    if action == "kafka_replay":
+        group = str(data.get("group") or "")
+        if group not in REPLAYABLE_GROUPS:
+            raise FaultError(f"{where}: group must be one of {sorted(REPLAYABLE_GROUPS)}")
+        minutes = float(data.get("minutes", 0))
+        if not 0 < minutes <= 30:
+            raise FaultError(f"{where}: minutes must be in (0, 30]")
+        return KafkaReplayStep(at=at, group=group, minutes=minutes)
     if action == "dsp_config":
         dsps = [str(d) for d in data.get("dsps") or []]
         if not dsps or set(dsps) - DSP_NAMES:
@@ -131,6 +215,7 @@ class DeployState:
             "to_version": step.version,
             "services": ["backend", "worker"],
             "config_changes": changes,
+            "migrations": list(step.migrations),
         }
         self.overrides.update(step.env)
         self.version = step.version

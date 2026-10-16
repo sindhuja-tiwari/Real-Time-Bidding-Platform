@@ -1,0 +1,48 @@
+id: s08-poison-message-crash-loop
+title: A malformed event crash-loops the worker and analytics stops updating
+
+alert: analytics_backlog
+
+report: >
+  The analytics dashboard stopped moving: auction counts per minute are
+  flat even though publishers say traffic is normal. Identify the likely
+  cause, show the supporting evidence, and test a remediation without
+  touching the live system.
+
+traffic:
+  rps: 20
+  baseline_seconds: 40
+  incident_seconds: 60
+
+steps:
+  # 0: a foreign producer writes one truncated JSON message to auction-events
+  - at: 0
+    action: kafka_publish
+    template: truncated_json
+    count: 1
+
+ground_truth:
+  category: poison_message
+  component: auction-events topic / worker consumers (message that fails deserialization)
+  summary: >
+    A truncated JSON message landed on auction-events. The worker's consumers
+    decode messages in the Kafka client's deserializer, outside the retry and
+    dead-letter path, so the exception kills the whole worker process. It
+    restarts, reads the same uncommitted message, and dies again. Auctions
+    still succeed, but nothing downstream is consumed: consumer lag grows and
+    the analytics rollup falls further behind every second.
+  causal_steps: [0]
+  causal_settings: []
+  decoy_settings: []
+  distinguishing_evidence:
+    - worker logs show repeated JSONDecodeError tracebacks and worker_starting lines
+    - consumer lag grows on all three groups while their committed offsets stay put
+    - auction success rate is unaffected
+  remediation:
+    description: Skip the one undecodable message (advance the stuck groups' offsets by one).
+    changes:
+      - {kind: skip_stuck_message, groups: [analytics-consumer, audit-consumer, budget-consumer]}
+    expected_min_success_rate: 0.9
+
+verify:
+  min_success_rate_drop: 0

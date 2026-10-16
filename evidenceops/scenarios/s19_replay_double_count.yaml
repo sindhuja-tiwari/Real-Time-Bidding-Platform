@@ -1,0 +1,49 @@
+id: s19-replay-double-counts-analytics
+title: An operator replays the analytics consumer and the rollup double-counts
+
+alert: analytics_overcount
+
+report: >
+  The analytics dashboard shows more auctions than the platform ran: the
+  per-minute counts no longer match the auction table. Identify the likely
+  cause, show the supporting evidence, and test a remediation without
+  touching the live system.
+
+traffic:
+  rps: 20
+  baseline_seconds: 40
+  incident_seconds: 60
+
+steps:
+  # 0: offsets rewound two minutes, as when replaying after a suspected gap
+  - at: 0
+    action: kafka_replay
+    group: analytics-consumer
+    minutes: 2
+
+ground_truth:
+  category: duplicate_delivery_idempotency
+  component: analytics consumer rollup UPSERT (not idempotent per event_id)
+  summary: >
+    The analytics consumer's offsets were rewound two minutes. Kafka
+    delivers at least once, so redelivery is expected, but the rollup handler
+    adds 1 per event without recording which event ids it has applied. Every
+    replayed event is counted again.
+  causal_steps: [0]
+  decoy_steps: []
+  causal_settings: []
+  decoy_settings: []
+  distinguishing_evidence:
+    - analytics-consumer's committed offset moves backwards
+    - the same auction_id appears twice in analytics_rollup_updated logs
+    - the rollup total exceeds finished auctions
+  remediation:
+    description: >
+      Make the handler idempotent (record applied event_ids in the same
+      transaction) and rebuild the affected minutes from the auction table.
+      Neither is an allowlisted runtime change, so no sandbox test runs.
+    changes: []
+    expected_min_success_rate: 0.9
+
+verify:
+  min_success_rate_drop: 0

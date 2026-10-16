@@ -1,0 +1,43 @@
+id: s13-small-pool-fails-fast
+title: A small pool with a 1s checkout timeout fails auctions outright
+
+report: >
+  Auction success rate dropped sharply shortly after the auction backend was
+  deployed this afternoon. Identify the likely cause, show the supporting
+  evidence, and test a remediation without touching the live system.
+
+traffic:
+  rps: 24
+  baseline_seconds: 40
+  incident_seconds: 60
+
+steps:
+  - at: 0
+    action: deploy
+    version: 1.3.4
+    env:
+      DB_POOL_SIZE: "2"
+      DB_MAX_OVERFLOW: "0"
+      DB_POOL_TIMEOUT_SECONDS: "1"
+
+ground_truth:
+  category: db_pool_exhaustion
+  component: backend SQLAlchemy connection pool (DB_POOL_SIZE / DB_MAX_OVERFLOW / DB_POOL_TIMEOUT_SECONDS)
+  summary: >
+    v1.3.4 cut the pool to 2 connections and the checkout timeout to 1s.
+    Instead of queueing for 30s, requests give up after 1s with QueuePool
+    timeouts and the auction fails, so success drops with errors rather than
+    publisher timeouts.
+  causal_steps: [0]
+  decoy_steps: []
+  causal_settings: [DB_POOL_SIZE, DB_MAX_OVERFLOW, DB_POOL_TIMEOUT_SECONDS]
+  decoy_settings: []
+  distinguishing_evidence:
+    - QueuePool timeout errors in backend logs after 1s waits
+    - Postgres connections stay few and mostly idle
+  remediation:
+    description: Roll the pool size and overflow back.
+    changes:
+      - {kind: rollback_setting, setting: DB_POOL_SIZE}
+      - {kind: rollback_setting, setting: DB_MAX_OVERFLOW}
+    expected_min_success_rate: 0.9

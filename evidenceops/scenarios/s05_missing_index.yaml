@@ -1,0 +1,52 @@
+id: s05-missing-index-after-migration
+title: A schema migration drops the index behind the idempotency lookup
+
+report: >
+  Auction success rate dropped sharply shortly after the auction backend was
+  deployed this afternoon. Identify the likely cause, show the supporting
+  evidence, and test a remediation without touching the live system.
+
+setup:
+  history_auctions: 2000000
+
+traffic:
+  rps: 24
+  baseline_seconds: 40
+  incident_seconds: 60
+
+steps:
+  # 0: the release ships a migration that silently loses the unique index,
+  # plus a harmless cache TTL change
+  - at: 0
+    action: deploy
+    version: 1.5.0
+    migrations: [0004_auction_request_id_collation]
+    env:
+      REDIS_CACHE_TTL_SECONDS: "45"
+
+ground_truth:
+  category: missing_index
+  component: auction.request_id index (dropped by migration 0004_auction_request_id_collation)
+  summary: >
+    Release 1.5.0 ran migration 0004, which rebuilt auction.request_id and
+    dropped its UNIQUE constraint, and with it the only index on the column.
+    Every auction starts with an idempotency lookup by request_id, which is
+    now a sequential scan over two million rows. Each request holds a pooled
+    connection for the scan, the pool queues, and requests miss their 2s
+    timeout while DSPs stay fast.
+  causal_steps: [0]
+  causal_settings: []
+  decoy_settings: [REDIS_CACHE_TTL_SECONDS]
+  distinguishing_evidence:
+    - active queries show the SELECT on auction by request_id running for hundreds of ms
+    - sequential scans on auction jump from ~0 to one or more per request, with millions of tuples read
+    - pg_indexes no longer lists auction_request_id_key
+    - DSP response times are unchanged, ruling out slow bidders
+  remediation:
+    description: Roll back migration 0004 (re-create the unique index on auction.request_id).
+    changes:
+      - {kind: rollback_migration, migration: 0004_auction_request_id_collation}
+    expected_min_success_rate: 0.9
+
+verify:
+  min_success_rate_drop: 0.3

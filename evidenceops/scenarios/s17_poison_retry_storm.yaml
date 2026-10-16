@@ -1,0 +1,46 @@
+id: s17-legacy-events-retry-storm
+title: A burst of old-format events stalls the worker in retries
+
+alert: analytics_backlog
+
+report: >
+  The analytics dashboard stopped moving: auction counts per minute are
+  flat even though publishers say traffic is normal. Identify the likely
+  cause, show the supporting evidence, and test a remediation without
+  touching the live system.
+
+traffic:
+  rps: 20
+  baseline_seconds: 40
+  incident_seconds: 60
+
+steps:
+  # 0: an old producer replays 20 events without a timestamp
+  - at: 0
+    action: kafka_publish
+    template: missing_timestamp
+    count: 20
+
+ground_truth:
+  category: poison_message
+  component: auction-events messages without a timestamp (handler rejects them; retried with backoff)
+  summary: >
+    Twenty events from an older producer have no timestamp. The analytics
+    handler raises KeyError on each, and the consumer retries every one with
+    1s, 2s and 4s backoff before dead-lettering it, so the analytics group
+    spends minutes on twenty messages while real events pile up behind them.
+  causal_steps: [0]
+  decoy_steps: []
+  causal_settings: []
+  decoy_settings: []
+  distinguishing_evidence:
+    - worker logs show consumer_retry warnings with KeyError 'timestamp' and consumer_max_retries_exceeded
+    - analytics-consumer's committed offset crawls while lag grows
+  remediation:
+    description: Dead-letter rejected messages on the first failure (EVENT_MAX_RETRIES=0), then fix the producer.
+    changes:
+      - {kind: deploy_setting, setting: EVENT_MAX_RETRIES, value: "0"}
+    expected_min_success_rate: 0.9
+
+verify:
+  min_success_rate_drop: 0
