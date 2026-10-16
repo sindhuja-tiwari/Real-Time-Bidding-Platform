@@ -478,7 +478,7 @@ methods. Run it yourself with `run --all`, `investigate` for each method, and
 | Mean tool calls | 8.6 | 8.0 |
 | Mean time to a correct diagnosis | 0.32s | 0.24s |
 | Cost | $0 | $0 |
-| Fixes verified in the sandbox | not proposed | 18/20 (90%) |
+| Fixes verified in the sandbox | not proposed | 20/20 (100%) |
 
 **Where the runbook fails, and why.** It blames the connection pool on all
 three missing-index incidents: the pool really is exhausted, and it has no step
@@ -507,7 +507,7 @@ tested in its own freshly built sandbox:
 | `s02-global-timeout-misconfigured` | `AUCTION_GLOBAL_TIMEOUT_MS=100` (rollback) | 99.2% | 0.6% | 99.3% | verified |
 | `s03-db-pool-exhaustion` | `DB_MAX_OVERFLOW=10` (rollback); `DB_POOL_SIZE=20` (rollback) | 99.7% | 0.0% | 99.6% | verified |
 | `s04-ambiguous-deadline-and-slow-bidders` (experiment) | `AUCTION_GLOBAL_TIMEOUT_MS=100` (rollback) | 99.4% | 0.0% | 95.4% | verified |
-| `s05-missing-index-after-migration` | roll back `0004_auction_request_id_collation` | 99.6% | 0.1% | 0.0% | not fixed |
+| `s05-missing-index-after-migration` | roll back `0004_auction_request_id_collation` | 99.4% | 0.0% | 99.4% | verified |
 | `s06-bidders-slow-after-cache-deploy` | `AUCTION_GLOBAL_TIMEOUT_MS=200`; timeout 200ms on DSP-A, DSP-B, DSP-D, DSP-E | 99.2% | 0.0% | 99.5% | verified |
 | `s07-bidders-degrade-in-stages` | `AUCTION_GLOBAL_TIMEOUT_MS=200`; timeout 200ms on DSP-A, DSP-B, DSP-D, DSP-E | 99.5% | 0.0% | 98.6% | verified |
 | `s08-poison-message-crash-loop` | skip the stuck message in all three groups | drift 1 | drift 1099 | drift 1 | verified |
@@ -517,7 +517,7 @@ tested in its own freshly built sandbox:
 | `s12-pool-too-small-for-peak` | `DB_MAX_OVERFLOW=10` (rollback); `DB_POOL_SIZE=20` (rollback) | 78.2% | 0.1% | 89.9% | verified |
 | `s13-small-pool-fails-fast` | `DB_MAX_OVERFLOW=10` (rollback); `DB_POOL_SIZE=20` (rollback); `DB_POOL_TIMEOUT_SECONDS=30` (rollback) | 98.7% | 24.8% | 99.8% | verified |
 | `s14-pool-cut-bundled-with-deadline-raise` | `DB_MAX_OVERFLOW=10` (rollback); `DB_POOL_SIZE=20` (rollback) | 99.6% | 0.2% | 99.8% | verified |
-| `s15-missing-index-among-three-migrations` | roll back `0004_auction_request_id_collation` | 99.8% | 0.1% | 0.0% | not fixed |
+| `s15-missing-index-among-three-migrations` | roll back `0004_auction_request_id_collation` | 95.8% | 0.0% | 99.7% | verified |
 | `s16-missing-index-with-pool-resize` | roll back `0004_auction_request_id_collation` | 99.4% | 0.0% | 98.9% | verified |
 | `s17-legacy-events-retry-storm` | `EVENT_MAX_RETRIES=0` | drift 1 | drift 1092 | drift 1 | verified |
 | `s18-poison-message-after-worker-deploy` | skip the stuck message in all three groups | drift 1 | drift 880 | drift 1 | verified |
@@ -526,19 +526,22 @@ tested in its own freshly built sandbox:
 | `s21-ambiguous-deadline-60-and-bidders-70` (experiment) | `AUCTION_GLOBAL_TIMEOUT_MS=100` (rollback) | 94.0% | 11.6% | 98.9% | verified |
 | `s22-slow-bidders-after-pool-resize` | `AUCTION_GLOBAL_TIMEOUT_MS=200`; timeout 200ms on DSP-A, DSP-B, DSP-D, DSP-E | 98.6% | 0.0% | 98.6% | verified |
 
-Two of the three missing-index fixes are recorded as not fixed, and the
-sandbox's own evidence shows why. Restoring the index works: the slow scans
-stop within seconds. But while the index was missing, hundreds of requests
-queued for a database connection, and when they are released together their
-DSP calls flood the backend's shared HTTP client. In s05 and s15 the client
-never recovers: for the rest of the run every DSP call times out after 100ms
-without the simulator ever receiving it, so auctions end `NO_BID`. In s16, and
-in an earlier attempt at s05, the same flood cleared after about 30 seconds.
-That is a second platform fault, a cascading one that the incident set off, and
-it is the reason verification runs the whole platform instead of checking only
-that the index exists. Fixing it means making the DSP client survive a burst;
-until then a backend restart is the operational fix, and restarts are not an
-allowlisted change.
+The missing-index experiments also exposed a second, cascading platform
+fault. While the index was missing, hundreds of requests queued for a database
+connection; when the rollback released them together, their DSP calls flooded
+the backend's shared HTTP client, and in about one replay in three the client
+never recovered. Every later DSP call timed out after 100ms without the
+simulator receiving it, so auctions ended `NO_BID` until the backend restarted.
+The cause was a connection-slot leak in httpcore's pool (1.0.x): when a queued
+request is handed a brand-new connection at the moment its pool timeout fires,
+the request gives up and the pool keeps the connection, which stays
+`CONNECTING` forever. DSP calls use pool timeouts of about 100ms, so a burst
+leaks slots quickly, and once all 100 are gone the client is wedged. The
+backend now uses `DSPTransport` (`backend/app/services/bidding/transport.py`),
+which returns orphaned slots to the pool whenever a request fails; a single
+replay drops up to a few hundred of them. With it, ten replays of s05 and s15
+all verified, as did the recorded runs above. This is why verification runs
+the whole platform instead of checking only that the index exists.
 
 s12's sandbox baseline was only 78% at 32 auctions/s, close to what one
 backend process can serve, so its "verified" compares against a weaker
