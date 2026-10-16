@@ -132,10 +132,14 @@ async def _call_one_dsp_untraced(
             status=BidStatus.VALID,
         )
 
-    except (asyncio.TimeoutError, httpx.TimeoutException):
+    except (asyncio.TimeoutError, httpx.TimeoutException) as exc:
         elapsed_ms = int((time.perf_counter() - start) * 1000)
         DSP_TIMEOUT_TOTAL.labels(dsp_name=dsp.name).inc()
-        logger.info("dsp_timeout", dsp_name=dsp.name, elapsed_ms=elapsed_ms, budget_ms=dsp.timeout_ms)
+        # Which phase timed out (PoolTimeout, ConnectTimeout, ReadTimeout, or
+        # TimeoutError for our own backstop) separates a slow DSP from a
+        # starved client.
+        logger.info("dsp_timeout", dsp_name=dsp.name, elapsed_ms=elapsed_ms, budget_ms=dsp.timeout_ms,
+                    reason=type(exc).__name__)
         return RawBid(
             dsp_id=dsp.id,
             dsp_name=dsp.name,

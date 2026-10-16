@@ -42,6 +42,7 @@ from app.schemas.auction import AuctionRequest, AuctionResponse, BidResponse
 from app.services.bidding.client import BidRequestContext, collect_bids
 from app.services.bidding.strategies import get_strategy
 from app.services.bidding.types import BidStatus, RawBid
+from app.services.bidding.transport import make_dsp_http_client
 from app.services.bidding.validation import validate_bid
 from app.services.campaign.service import CampaignService
 from app.services.dsp.service import DSPService
@@ -55,7 +56,7 @@ _http_client: httpx.AsyncClient | None = None
 def get_http_client() -> httpx.AsyncClient:
     global _http_client
     if _http_client is None:
-        _http_client = httpx.AsyncClient()
+        _http_client = make_dsp_http_client()
     return _http_client
 
 
