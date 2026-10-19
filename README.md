@@ -1,5 +1,8 @@
 # Real-Time Bidding Platform
 
+[![CI](https://github.com/sindhuja-tiwari/Real-Time-Bidding-Platform/actions/workflows/ci.yml/badge.svg)](https://github.com/sindhuja-tiwari/Real-Time-Bidding-Platform/actions/workflows/ci.yml)
+
+
 A simplified real-time bidding (programmatic advertising) auction platform, built to demonstrate
 low-latency request handling, concurrent I/O, event-driven architecture, and the operational
 concerns that come with them: caching, idempotency, rate limiting, observability and failure
