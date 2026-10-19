@@ -10,7 +10,7 @@ The target question:
 > show the supporting evidence, and test a remediation without touching the
 > live system.
 
-This directory currently holds **milestones 1 to 5**:
+This directory holds **milestones 1 to 6**:
 
 - a reproducible incident harness with 22 injected incidents across six root
   causes, each with recorded ground truth,
@@ -22,7 +22,11 @@ This directory currently holds **milestones 1 to 5**:
 - approval-gated remediation experiments in a disposable copy of the
   platform, and an ambiguous scenario where abstaining is the right answer,
 - a grader that scores any investigation method against ground truth, and
-  [results across the whole suite](#results-across-the-suite).
+  [results across the whole suite](#results-across-the-suite),
+- an [HTTP API](#http-api) with the same operations as the CLI, so a web UI
+  can drive EvidenceOps, plus an end-to-end demo, an
+  [architecture write-up](../docs/evidenceops.md) and
+  [benchmark instructions](../docs/evidenceops-benchmark.md).
 
 ## Quick start
 
@@ -43,6 +47,8 @@ python -m evidenceops investigate --method agent --provider gemini   # free tier
 python -m evidenceops remediate --method agent_offline   # propose fixes; nothing runs yet
 python -m evidenceops remediate --method agent_offline --approve "Your Name"   # test them in a sandbox
 python -m evidenceops evaluate      # grade saved investigations against ground truth
+python -m evidenceops serve         # HTTP API on 127.0.0.1:8100 for a web UI
+python -m evidenceops.demo          # walk one incident end to end through the API
 pytest evidenceops/tests            # unit tests, no Docker needed
 ```
 
@@ -550,6 +556,21 @@ baseline than the others.
 The two double-count incidents get no proposal: their fix is code (make the
 rollup idempotent) plus a data rebuild, which no allowlisted change can do.
 
+## HTTP API
+
+`python -m evidenceops serve` exposes everything the CLI does over HTTP
+(FastAPI, interactive docs at `http://127.0.0.1:8100/docs`), so the platform
+dashboard can drive EvidenceOps instead of a terminal. Both front ends call the
+same functions in `service.py`, so a run, report or proposal made through one
+is visible to the other. Recording a run and testing a fix return a job to
+poll and run one at a time; reading runs, reports, grades and evidence is
+immediate and read-only. Approval takes the approver's name and the digest of
+the proposal they reviewed. `EVIDENCEOPS_API_TOKEN` turns on bearer-token
+checks for every call that starts work or approves something. The endpoint
+list is in [docs/evidenceops.md](../docs/evidenceops.md#http-api), and
+[docs/evidenceops-demo.md](../docs/evidenceops-demo.md) walks one incident
+through it.
+
 ## Safety model
 
 - **No command execution from scenarios.** A scenario can only `deploy`
@@ -628,4 +649,8 @@ CPU bound. Scenarios run at 20–30 auctions/s to stay below that.
    delivery, ...) and compare the investigator with both baselines on
    accuracy, abstention, time, tool calls and cost.~~ The model's own numbers
    need an API key; see [Results across the suite](#results-across-the-suite).
-6. Demo, architecture write-up, and benchmark instructions.
+6. ~~Demo, architecture write-up, and benchmark instructions.~~ See
+   [docs/evidenceops-demo.md](../docs/evidenceops-demo.md),
+   [docs/evidenceops.md](../docs/evidenceops.md) and
+   [docs/evidenceops-benchmark.md](../docs/evidenceops-benchmark.md), plus an
+   [HTTP API](#http-api) for the web UI.

@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from evidenceops import scenario as scenario_mod
 from evidenceops.paths import RUNS_DIR
+from evidenceops.service import METHODS
 
 
 def _cmd_list(_: argparse.Namespace) -> int:
@@ -53,55 +54,13 @@ def _cmd_run(args: argparse.Namespace) -> int:
     return 0 if all(r["passed"] for r in results) else 1
 
 
-def _fixed_workflow(run_dir: Path, args: argparse.Namespace):
-    from evidenceops.baselines import fixed_workflow
+def _investigator(args: argparse.Namespace):
+    from evidenceops import service
 
-    return fixed_workflow.investigate(run_dir)
-
-
-def _backend(args: argparse.Namespace):
-    """The model behind agent and log_only, built once per command."""
-    if getattr(args, "_backend", None) is None:
-        if args.provider == "anthropic":
-            from evidenceops.agent import claude
-
-            args._backend = claude.ClaudeModel(model=args.model or claude.DEFAULT_MODEL, effort=args.effort)
-        else:
-            from evidenceops.agent.openai_compat import OpenAICompatModel
-
-            args._backend = OpenAICompatModel(args.provider, model=args.model)
-    return args._backend
-
-
-def _suffix(args: argparse.Namespace) -> str:
-    return "" if args.provider == "anthropic" else f"_{args.provider}"
-
-
-def _agent(run_dir: Path, args: argparse.Namespace):
-    from evidenceops.agent import loop
-
-    return loop.investigate(run_dir, _backend(args), method="agent" + _suffix(args), max_tool_calls=args.max_tool_calls)
-
-
-def _agent_offline(run_dir: Path, args: argparse.Namespace):
-    from evidenceops.agent import loop, offline
-
-    return loop.investigate(run_dir, offline.OfflinePolicy(), method="agent_offline", max_tool_calls=args.max_tool_calls)
-
-
-def _log_only(run_dir: Path, args: argparse.Namespace):
-    from evidenceops.baselines import log_only
-
-    return log_only.investigate(run_dir, _backend(args), method="log_only" + _suffix(args))
-
-
-# Methods marked True call a model API and need a key for --provider.
-METHODS = {
-    "fixed_workflow": (_fixed_workflow, False),
-    "agent_offline": (_agent_offline, False),
-    "agent": (_agent, True),
-    "log_only": (_log_only, True),
-}
+    try:
+        return service.Investigator(args.method, args.provider, args.model, args.effort, args.max_tool_calls)
+    except service.Rejected as exc:
+        raise SystemExit(str(exc)) from None
 
 
 def _run_dirs(paths: List[str]) -> List[Path]:
@@ -113,12 +72,9 @@ def _run_dirs(paths: List[str]) -> List[Path]:
 
 
 def _cmd_investigate(args: argparse.Namespace) -> int:
-    from evidenceops import investigation
-
-    run = METHODS[args.method][0]
+    investigate = _investigator(args)
     for run_dir in _run_dirs(args.runs):
-        report = run(run_dir, args)
-        path = investigation.save(report, run_dir)
+        report, path = investigate(run_dir)
         top = "abstained: " + report.abstain_reason if report.abstained else report.hypotheses[0].category
         cost = f", ${report.cost_usd:.4f}" if report.cost_usd else ""
         print(f"{run_dir.name}: {top}  [{report.tool_calls} tool calls{cost}]  ({path})", flush=True)
@@ -174,29 +130,22 @@ def _cmd_remediate(args: argparse.Namespace) -> int:
 
 
 def _cmd_evaluate(args: argparse.Namespace) -> int:
-    from evidenceops import investigation
+    from evidenceops import service
 
-    rows = []
-    for run_dir in _run_dirs(args.runs):
-        truth = json.loads((run_dir / "ground_truth" / "ground_truth.json").read_text())
-        found = sorted(p for p in (run_dir / "investigations").glob("*.json") if not p.name.endswith(".transcript.json"))
-        for path in found:
-            if not args.methods or path.stem in args.methods:
-                row = investigation.grade(json.loads(path.read_text()), truth)
-                result = run_dir / "remediation" / f"{path.stem}.result.json"
-                if result.exists():
-                    row["remediation_verdict"] = json.loads(result.read_text())["verdict"]
-                rows.append(row)
-    for r in rows:
+    evaluation = service.evaluate(_run_dirs(args.runs), args.methods)
+    for r in evaluation["runs"]:
         mark = "abstain" if r["abstained"] else ("OK " if r["top1_correct"] else "MISS")
         print(f"{r['method']:16} {r['scenario_id']:34} {mark:8} truth={r['truth']:24} predicted={r['predicted']}  top3={r['top3']}")
-    by_method: Dict[str, List[Dict[str, Any]]] = {}
-    for r in rows:
-        by_method.setdefault(r["method"], []).append(r)
-    summary = {m: investigation.aggregate(rs) for m, rs in by_method.items()}
-    print(json.dumps(summary, indent=2))
+    print(json.dumps(evaluation["summary"], indent=2))
     if args.out:
-        Path(args.out).write_text(json.dumps({"runs": rows, "summary": summary}, indent=2) + "\n")
+        Path(args.out).write_text(json.dumps(evaluation, indent=2) + "\n")
+    return 0
+
+
+def _cmd_serve(args: argparse.Namespace) -> int:
+    from evidenceops.api import serve
+
+    serve(args.host, args.port)
     return 0
 
 
@@ -237,6 +186,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     ev.add_argument("--methods", nargs="*", help="methods to grade (default: all found)")
     ev.add_argument("--out", help="also write rows and summary to this JSON file")
     ev.set_defaults(func=_cmd_evaluate)
+
+    srv = sub.add_parser("serve", help="serve the HTTP API a web UI can drive (see evidenceops/api.py)")
+    srv.add_argument("--host", default="127.0.0.1", help="non-loopback needs EVIDENCEOPS_API_TOKEN")
+    srv.add_argument("--port", type=int, default=8100)
+    srv.set_defaults(func=_cmd_serve)
 
     args = parser.parse_args(argv)
     return args.func(args)
