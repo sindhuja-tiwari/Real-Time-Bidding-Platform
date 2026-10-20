@@ -104,6 +104,7 @@ pip install -r evidenceops/requirements.txt
 python -m evidenceops run --all
 python -m evidenceops investigate --method agent   # needs ANTHROPIC_API_KEY
 python -m evidenceops evaluate
+python -m evidenceops serve      # HTTP API on 127.0.0.1:8100 for the web UI
 ```
 
 Running it against the live platform found and fixed several real bugs (budget reservation type
@@ -118,7 +119,7 @@ Real-Time-Bidding-Platform/
 |                     services/, events/, workers/, tests/, alembic migrations
 |- dsp-simulator/     standalone FastAPI service simulating 5 DSPs
 |- frontend/          Next.js + TypeScript + Tailwind dashboard
-|- evidenceops/       incident harness, diagnostic tools, investigator, grader
+|- evidenceops/       incident harness, diagnostic tools, investigator, grader, HTTP API
 |- load-tests/        Locust scenarios
 |- infrastructure/    Prometheus + Grafana config
 |- docs/              architecture, database, auction-engine, failure-handling, performance
@@ -134,6 +135,9 @@ Real-Time-Bidding-Platform/
 - [`docs/failure-handling.md`](docs/failure-handling.md): degradation behaviour per dependency, retry policy
 - [`docs/performance.md`](docs/performance.md): load-testing methodology
 - [`evidenceops/README.md`](evidenceops/README.md): incident harness and results
+- [`docs/evidenceops.md`](docs/evidenceops.md): EvidenceOps architecture, safety model and HTTP API
+- [`docs/evidenceops-benchmark.md`](docs/evidenceops-benchmark.md): reproducing the EvidenceOps results
+- [`docs/evidenceops-demo.md`](docs/evidenceops-demo.md): one incident walked through end to end
 
 ## Known limitations
 
