@@ -23,7 +23,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <ReadyContext.Provider value={ready}>
         <div className="min-h-screen font-display" style={{ background: T.bg, color: T.cream }}>
           <SmoothScroll />
-          <Preloader onDone={() => setReady(true)} colors={{ bg: T.bg, fg: T.cream, muted: T.drift, accent: T.ember }} />
+          <Preloader onDone={() => setReady(true)} colors={{ bg: T.bg, fg: T.cream, muted: T.drift, accent: T.ember, second: T.saffron }} />
           <Nav ready={ready} />
           {pathname === "/" ? (
             children
