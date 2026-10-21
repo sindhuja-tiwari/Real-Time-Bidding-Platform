@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import Antigravity from "@/components/reactbits/Antigravity";
 import Counter from "@/components/reactbits/Counter";
 import Magnet from "@/components/reactbits/Magnet";
 import DecryptedText from "@/components/reactbits/DecryptedText";
@@ -20,6 +19,7 @@ import { SwapText } from "@/components/motion/SwapText";
 import { DashRule } from "@/components/motion/DashRule";
 import { useInView } from "@/components/motion/hooks";
 import { useReady } from "@/components/motion/ready";
+import { LavaField } from "@/components/motion/LavaField";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -41,7 +41,7 @@ export default function LivePage() {
   useEffect(() => {
     if (!ready) return;
     const tl = gsap.timeline({ defaults: { ease: "expo.out" } });
-    tl.fromTo(object.current, { scale: 0.6, opacity: 0, rotate: -25 }, { scale: 1, opacity: 1, rotate: 0, duration: 1.8 }, 0)
+    tl.fromTo(object.current, { scale: 0.85, opacity: 0, rotate: -12 }, { scale: 1, opacity: 1, rotate: 0, duration: 1.8 }, 0.5)
       .fromTo(left.current?.querySelectorAll("[data-in]") ?? [], { y: 60, opacity: 0 }, { y: 0, opacity: 1, duration: 1.2, stagger: 0.08 }, 0.15)
       .fromTo(right.current?.querySelectorAll("[data-in]") ?? [], { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 1.2, stagger: 0.08 }, 0.35);
     return () => {
@@ -49,13 +49,15 @@ export default function LivePage() {
     };
   }, [ready]);
 
-  // Scroll: the object turns and recedes, the columns drift apart.
+  // Scroll: the chart turns away and the columns drift apart. Explicit start
+  // values matter here: a plain .to() would capture the pre-entrance opacity (0)
+  // and snap back to it whenever ScrollTrigger refreshes.
   useEffect(() => {
     const ctx = gsap.context(() => {
       const st = { trigger: hero.current, start: "top top", end: "bottom top", scrub: 0.8 };
-      gsap.to(object.current, { rotate: 35, scale: 0.72, yPercent: 18, opacity: 0.25, ease: "none", scrollTrigger: st });
-      gsap.to(left.current, { yPercent: -30, opacity: 0, ease: "none", scrollTrigger: st });
-      gsap.to(right.current, { yPercent: -45, opacity: 0, ease: "none", scrollTrigger: st });
+      gsap.fromTo(object.current, { rotate: 0, scale: 1, yPercent: 0 }, { rotate: 35, scale: 0.72, yPercent: 18, ease: "none", immediateRender: false, scrollTrigger: st });
+      gsap.fromTo(left.current, { yPercent: 0, opacity: 1 }, { yPercent: -30, opacity: 0, ease: "none", immediateRender: false, scrollTrigger: st });
+      gsap.fromTo(right.current, { yPercent: 0, opacity: 1 }, { yPercent: -45, opacity: 0, ease: "none", immediateRender: false, scrollTrigger: st });
     });
     return () => ctx.revert();
   }, []);
@@ -69,11 +71,13 @@ export default function LivePage() {
       : "Waiting for the first bid";
 
   return (
-    <main>
+    <main className="relative">
+      <LavaField anchor={object} start={ready} pulse={a?.id} />
       {/* HERO */}
       <section
         ref={hero}
-        className="relative grid min-h-[100svh] grid-cols-1 items-center gap-6 px-5 pb-16 pt-28 md:px-8 lg:grid-cols-[1fr_minmax(420px,600px)_1fr]"
+        data-lava="0"
+        className="relative z-10 grid min-h-[100svh] grid-cols-1 items-center gap-6 px-5 pb-16 pt-28 md:px-8 lg:grid-cols-[1fr_minmax(420px,600px)_1fr]"
       >
         <div ref={left} className="order-2 lg:order-1">
           <div data-in className="text-[12px] font-medium uppercase opacity-0" style={{ color: T.drift }}>
@@ -99,19 +103,6 @@ export default function LivePage() {
         </div>
 
         <div ref={object} className="relative order-1 mx-auto aspect-square w-full max-w-[600px] opacity-0 lg:order-2">
-          <div className="absolute inset-0">
-            <Antigravity
-              count={380}
-              colors={[T.ember, T.flame, T.saffron, T.cream]}
-              colorMode="random"
-              particleShape="tetrahedron"
-              particleSize={1.3}
-              ringRadius={running ? 9.5 : 7.5}
-              magnetRadius={9}
-              waveAmplitude={1.1}
-              autoAnimate
-            />
-          </div>
           <div className="absolute inset-[9%]">
             {bids.length > 0 && (
               <RadialRace
@@ -167,7 +158,7 @@ export default function LivePage() {
       </section>
 
       {/* MARQUEE */}
-      <section className="py-10">
+      <section className="relative z-10 py-10">
         <ScrollVelocity
           texts={["Second price · 100 ms · Five buyers · One winner ·", "Bid fast or not at all · Kafka · Redis · Postgres ·"]}
           velocity={40}
@@ -186,7 +177,7 @@ export default function LivePage() {
       <Field />
 
       {/* LEDGER */}
-      <section className="px-5 pb-28 md:px-8">
+      <section data-lava="3" className="relative z-10 px-5 pb-28 md:px-8">
         <DashRule />
         <div className="grid gap-10 pt-16 lg:grid-cols-[1fr_2fr]">
           <h2 className="text-[41px] font-medium uppercase leading-[0.9]">
@@ -221,7 +212,7 @@ export default function LivePage() {
       </section>
 
       {/* FOOTER CTA */}
-      <section className="px-5 pb-16 md:px-8">
+      <section data-lava="3" className="relative z-10 px-5 pb-16 md:px-8">
         <DashRule />
         <Link href="/auctions" className="group mt-12 flex items-end justify-between gap-6">
           <span className="text-[13vw] font-medium uppercase leading-[0.8] tracking-[-0.03em] transition-colors duration-500 group-hover:text-[#dc5000]">
@@ -245,7 +236,7 @@ function Numbers({ overview }: { overview: ReturnType<typeof useLiveAuctions>["o
     { label: "Avg clearing", value: overview?.avg_winning_bid ?? 0, decimals: 2, prefix: "$" },
   ];
   return (
-    <section className="px-5 py-24 md:px-8">
+    <section data-lava="1" className="relative z-10 px-5 py-24 md:px-8">
       <DashRule />
       <div ref={ref} className="grid grid-cols-2 gap-x-6 gap-y-14 pt-14 lg:grid-cols-4">
         {stats.map((s, i) => (
@@ -298,7 +289,7 @@ function Field() {
   }, [dsps.length]);
 
   return (
-    <section className="px-5 pb-28 md:px-8">
+    <section data-lava="2" className="relative z-10 px-5 pb-28 md:px-8">
       <DashRule />
       <div className="grid gap-12 pt-16 lg:grid-cols-[1fr_1.4fr]">
         <div>
