@@ -1,18 +1,22 @@
 import type { Metadata } from "next";
+import { Inter, Inter_Tight, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import { NavBar } from "@/components/NavBar";
+import { Shell } from "@/components/ui/Shell";
+
+const sans = Inter({ subsets: ["latin"], variable: "--font-sans" });
+const display = Inter_Tight({ subsets: ["latin"], weight: ["400", "500"], variable: "--font-display" });
+const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
 
 export const metadata: Metadata = {
   title: "RTB Platform",
-  description: "Real-time bidding auction platform dashboard",
+  description: "Live second-price auctions across five DSPs, with a 100 ms deadline.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body>
-        <NavBar />
-        <main className="max-w-6xl mx-auto px-6 py-8">{children}</main>
+    <html lang="en" className={`${sans.variable} ${display.variable} ${mono.variable}`}>
+      <body className="font-sans min-h-screen">
+        <Shell>{children}</Shell>
       </body>
     </html>
   );

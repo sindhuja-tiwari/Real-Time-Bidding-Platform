@@ -45,6 +45,8 @@ export interface AuctionSummary {
   winning_bid_id: string | null;
   winning_dsp_name?: string | null;
   clearing_price?: number | null;
+  creative_url?: string | null;
+  landing_url?: string | null;
   started_at: string;
   completed_at: string | null;
 }
@@ -57,6 +59,20 @@ export interface Bid {
   amount: number;
   response_time_ms: number | null;
   status: string;
+}
+
+export interface LatencyBucket {
+  bucket_start: string;
+  p50_latency_ms: number;
+  p95_latency_ms: number;
+  p99_latency_ms: number;
+  count: number;
+}
+
+export interface AuctionRequest {
+  request_id: string;
+  user: { id: string; country: string; device: string };
+  ad_slot: { id: string; width: number; height: number };
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -79,6 +95,9 @@ export const api = {
   dsps: () => apiFetch<DSP[]>("/dsps"),
   auctions: (limit = 50) => apiFetch<AuctionSummary[]>(`/auctions?limit=${limit}`),
   auction: (id: string) => apiFetch<AuctionSummary>(`/auctions/${id}`),
+  runAuction: (body: AuctionRequest) =>
+    apiFetch<AuctionSummary>("/auctions", { method: "POST", body: JSON.stringify(body) }),
+  latency: (minutes = 60) => apiFetch<LatencyBucket[]>(`/analytics/latency?minutes=${minutes}`),
   bidsForAuction: (auctionId: string) => apiFetch<Bid[]>(`/bids/${auctionId}`),
   health: async () => {
     const root = API_BASE_URL.replace(/\/api\/v1\/?$/, "");
