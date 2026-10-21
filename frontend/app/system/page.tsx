@@ -1,78 +1,142 @@
-import { api } from "@/lib/api";
+"use client";
 
-export const dynamic = "force-dynamic";
+import { useState } from "react";
+import { useData, useQuery } from "@/lib/data";
+import { PageHeader, Panel } from "@/components/ui/primitives";
+import { DashRule } from "@/components/motion/DashRule";
+import { Reveal } from "@/components/motion/Reveal";
+import { T } from "@/lib/theme";
 
-export default async function SystemPage() {
-  let health;
-  let healthError: string | null = null;
-  try {
-    health = await api.health();
-  } catch (e) {
-    healthError = e instanceof Error ? e.message : "unreachable";
-  }
+const LINKS = [
+  { name: "API docs", note: "OpenAPI, FastAPI", href: "http://localhost:8000/api/v1/docs" },
+  { name: "Grafana", note: "admin / admin", href: "http://localhost:3001" },
+  { name: "Prometheus", note: "raw metrics", href: "http://localhost:9090" },
+  { name: "DSP simulator", note: "admin endpoints", href: "http://localhost:9000/admin/dsps" },
+];
+
+export default function SystemPage() {
+  const { backendUp, isDemo, preference, setPreference, adSlotId, setAdSlotId, apiBaseUrl } = useData();
+  const health = useQuery((s) => s.health());
+  const [slot, setSlot] = useState(adSlotId);
+
+  const state = backendUp === null ? "Checking" : backendUp ? "Reachable" : "Offline";
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-white">System</h1>
-        <p className="text-slate-400 text-sm mt-1">
-          Infrastructure health and links to the observability stack (Section 16/17 of the spec).
-        </p>
+    <div>
+      <PageHeader kicker="System · Wiring and observability" title="What the engine is talking to.">
+        The UI calls the backend at <span className="font-mono" style={{ color: T.cream }}>{apiBaseUrl}</span>. When it
+        can&apos;t reach it, auctions run in an in-browser simulation that follows the same rules.
+      </PageHeader>
+
+      <div className="grid gap-5 lg:grid-cols-3">
+        <Panel>
+          <div className="label">Backend</div>
+          <div className="mt-5 text-[40px] font-medium uppercase leading-none" style={{ color: backendUp ? T.saffron : T.cream }}>
+            {state}
+          </div>
+          <p className="mt-4 text-sm" style={{ color: T.drift }}>
+            {health.data ? `${health.data.service} · ${health.data.env}` : health.error ?? "…"}
+          </p>
+        </Panel>
+
+        <Panel delay={0.08}>
+          <div className="label">Data source</div>
+          <div className="mt-5 flex gap-2">
+            {(["auto", "live", "demo"] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => setPreference(p)}
+                className="rounded-full border px-4 py-2 text-[13px] uppercase transition-colors duration-300"
+                style={{
+                  borderColor: preference === p ? T.ember : T.cork,
+                  background: preference === p ? T.ember : "transparent",
+                  color: T.cream,
+                }}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+          <p className="mt-4 text-sm" style={{ color: T.drift }}>
+            Serving from {isDemo ? "the simulation" : "the live backend"}. Auto picks live when it&apos;s up.
+          </p>
+        </Panel>
+
+        <Panel delay={0.16}>
+          <div className="label">Ad slot for live auctions</div>
+          <form
+            className="mt-5 flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setAdSlotId(slot.trim());
+            }}
+          >
+            <input
+              value={slot}
+              onChange={(e) => setSlot(e.target.value)}
+              placeholder="ad slot UUID from seed.py"
+              className="min-w-0 flex-1 rounded-full border bg-transparent px-4 py-2 font-mono text-[12px] outline-none transition-colors focus:border-[#dc5000]"
+              style={{ borderColor: T.cork, color: T.cream }}
+            />
+            <button className="rounded-full px-4 py-2 text-[13px] uppercase" style={{ background: T.bark, color: T.cream }}>
+              Save
+            </button>
+          </form>
+          <p className="mt-4 text-sm" style={{ color: T.drift }}>
+            Printed by <span className="font-mono">python -m app.seed</span>. Not needed in demo mode.
+          </p>
+        </Panel>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-4">
-        <div className="card">
-          <div className="stat-label">Backend API</div>
-          <div className="stat-value">
-            {health ? (
-              <span className="text-emerald-400">Healthy</span>
-            ) : (
-              <span className="text-rose-400">Unreachable</span>
-            )}
-          </div>
-          {healthError && <p className="text-xs text-slate-500 mt-2">{healthError}</p>}
-          {health && (
-            <p className="text-xs text-slate-500 mt-2">
-              env={health.env} · service={health.service}
-            </p>
-          )}
-        </div>
+      <section className="mt-24">
+        <Reveal>
+          <div className="label">Observability</div>
+        </Reveal>
+        <DashRule className="mt-5" />
+        {LINKS.map((l, i) => (
+          <Reveal key={l.href} delay={i * 0.06} y={30}>
+            <a
+              href={l.href}
+              target="_blank"
+              rel="noreferrer"
+              className="group relative flex items-baseline justify-between overflow-hidden border-b border-dashed py-7"
+              style={{ borderColor: T.cork }}
+            >
+              <span className="absolute inset-0 origin-bottom scale-y-0 transition-transform duration-500 ease-[cubic-bezier(.7,0,.2,1)] group-hover:scale-y-100" style={{ background: T.ember }} />
+              <span className="relative text-[32px] font-medium uppercase leading-none transition-transform duration-500 ease-[cubic-bezier(.2,.8,.2,1)] group-hover:translate-x-4 md:text-[56px]">
+                {l.name}
+              </span>
+              <span className="relative flex items-center gap-6 text-sm" style={{ color: T.cream }}>
+                <span className="opacity-60">{l.note}</span>
+                <span className="text-2xl transition-transform duration-500 group-hover:-rotate-45">→</span>
+              </span>
+            </a>
+          </Reveal>
+        ))}
+      </section>
 
-        <div className="card">
-          <div className="stat-label">Observability</div>
-          <div className="mt-3 flex flex-col gap-2 text-sm">
-            <a href="http://localhost:9090" target="_blank" rel="noreferrer" className="text-accent hover:underline">
-              Prometheus →
-            </a>
-            <a href="http://localhost:3001" target="_blank" rel="noreferrer" className="text-accent hover:underline">
-              Grafana (admin/admin) →
-            </a>
-            <a href="http://localhost:8000/api/v1/docs" target="_blank" rel="noreferrer" className="text-accent hover:underline">
-              API Docs (OpenAPI) →
-            </a>
-            <a href="http://localhost:9000/admin/dsps" target="_blank" rel="noreferrer" className="text-accent hover:underline">
-              DSP Simulator Admin →
-            </a>
-          </div>
-        </div>
-      </div>
-
-      <div className="card">
-        <h2 className="text-sm font-medium text-slate-300 mb-2">Simulate a failure</h2>
-        <p className="text-sm text-slate-400">
-          To demonstrate graceful degradation (Section 14), reconfigure a DSP&apos;s failure/timeout probability at
-          runtime, without redeploying anything:
-        </p>
-        <pre className="mt-3 text-xs bg-slate-950 rounded-lg p-3 overflow-x-auto text-slate-300">
+      <section className="mt-24 grid gap-10 lg:grid-cols-[1fr_1.4fr] [&>*]:min-w-0">
+        <Reveal>
+          <div className="label">Break something on purpose</div>
+          <p className="mt-5 text-[28px] font-medium uppercase leading-[1.02]">
+            Slow one DSP down and watch the auction shrug it off.
+          </p>
+          <p className="mt-5 max-w-md text-sm leading-relaxed" style={{ color: T.drift }}>
+            Push DSP-C past the deadline at runtime. Its timeouts climb on the Field page and in Grafana, while every
+            auction still closes inside 100 ms.
+          </p>
+        </Reveal>
+        <Reveal delay={0.1}>
+          <pre className="overflow-x-auto rounded-[28px] border p-7 font-mono text-[12px] leading-relaxed" style={{ borderColor: T.cork, background: T.raised, color: "#b5a690" }}>
 {`curl -X POST http://localhost:9000/admin/dsps/dsp-c \\
   -H "Content-Type: application/json" \\
-  -d '{"campaign_id": "<existing-campaign-id>", "base_bid": 4.1, "latency_ms": 150, "timeout_probability": 0.9}'`}
-        </pre>
-        <p className="text-sm text-slate-400 mt-3">
-          Then re-run a few auctions and watch DSP-C&apos;s timeout rate climb on the Dashboard / Grafana without the
-          overall auction endpoint slowing down or failing.
-        </p>
-      </div>
+  -d '{"campaign_id": "<campaign-id>",
+       "base_bid": 4.1,
+       "latency_ms": 150,
+       "timeout_probability": 0.9}'`}
+          </pre>
+        </Reveal>
+      </section>
     </div>
   );
 }

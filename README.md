@@ -73,6 +73,35 @@ curl -X POST http://localhost:8000/api/v1/auctions \
 Then open http://localhost:3000/auctions to see it in the dashboard. Stop everything with
 `docker compose down` (add `-v` to also delete the database volume).
 
+### Running just the UI (no Docker)
+
+The frontend falls back to an in-browser simulation of the auction engine when the
+backend isn't reachable, so you can demo it on its own:
+
+```bash
+cd frontend
+npm install
+npm run dev        # http://localhost:3000
+```
+
+The simulation follows the same rules as the backend: five DSPs, a 100 ms deadline, a
+$0.50 floor, and second-price clearing at the runner-up's bid plus one cent. The pill in
+the top-right switches between **auto** (live when the backend is up), **live** and
+**demo**. To run live auctions, paste the `ad_slot_id` from the seed script into the
+System page.
+
+| Page | What it shows |
+|---|---|
+| `/` Live | Auctions running on autoplay: who won, how fast, and the radial DSP race |
+| `/auctions` Arena | Run one auction or a burst of ten and watch each DSP's bid land |
+| `/auctions/[id]` | Every DSP's response for one auction |
+| `/dsps` Field | Win rate, timeouts and response times per DSP |
+| `/campaigns` Budgets | Remaining budget per campaign |
+| `/system` System | Backend health, data source, ad slot, observability links |
+
+Motion respects `prefers-reduced-motion`. UI components come from
+[React Bits](https://reactbits.dev); animation uses GSAP, Lenis and Motion.
+
 ## Tests
 
 ```bash
@@ -118,7 +147,7 @@ Real-Time-Bidding-Platform/
 |- backend/           FastAPI app: api/, core/, models/, schemas/, repositories/,
 |                     services/, events/, workers/, tests/, alembic migrations
 |- dsp-simulator/     standalone FastAPI service simulating 5 DSPs
-|- frontend/          Next.js + TypeScript + Tailwind dashboard
+|- frontend/          Next.js + TypeScript + Tailwind UI (runs standalone in demo mode)
 |- evidenceops/       incident harness, diagnostic tools, investigator, grader, HTTP API
 |- load-tests/        Locust scenarios
 |- infrastructure/    Prometheus + Grafana config
