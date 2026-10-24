@@ -4,79 +4,166 @@ import { useEffect, useRef, type RefObject } from "react";
 
 /**
  * The "lava": a few thousand glowing embers drawn on one fixed canvas behind
- * the home page. Each section of the page names a formation with
- * `data-lava="n"`, and as you scroll the embers flow from one formation to the
- * next, each on its own slight delay so the shape melts rather than snaps.
+ * the home page. Each section of the page names a shape with `data-lava="n"`.
+ * As you scroll, the embers flow from one shape to the next in 3D, each on its
+ * own slight delay, while the whole cloud turns a full revolution per section,
+ * so every change of shape reads as the object rotating into its new form.
  *
- *   0  gavel    an auctioneer's gavel and block in 3D, on the right of the
- *               hero; it turns slowly, turns further as you scroll, and
- *               strikes the block every time an auction is sold
- *   1  burst    the gavel slides to the middle of the screen and blows
- *               outward from there, a warp-field streaming toward you
- *   2  lanes    five streams, one per DSP, each at its own speed
- *   3  line     everything settles into the 100 ms deadline
+ *   0  gavel      an auctioneer's gavel and block, right of the hero; it
+ *                 strikes the block every time an auction is sold
+ *   1  burst      the gavel blows outward from the middle of the screen
+ *   2  stopwatch  left of "the field": speed wins; its hand keeps sweeping
+ *   3  coins      right of the ledger: stacks of clearing prices
+ *   4  lens       left of incidents: a magnifying glass, looking for causes
+ *
+ * Shapes alternate sides so the page reads in a zigzag with the copy.
  */
 
 type Props = {
-  /** The orb is centred on this element and sized to it. */
+  /** The gavel is centred on this element and sized to it. */
   anchor: RefObject<HTMLElement>;
-  /** Flip to true to burst the orb out from a single point. */
+  /** Flip to true to burst the embers out from a single point. */
   start: boolean;
-  /** Change this to send a pulse through the orb (e.g. on each auction). */
+  /** Change this to make the gavel strike (e.g. on each auction). */
   pulse?: unknown;
   colors?: string[];
 };
 
-const FORMATIONS = 4;
+const FORMATIONS = 5;
 
-/*
- * The gavel, in its own units. The handle runs up the y axis from its end at
- * the origin; the head sits across the top with its axis along x. The whole
- * gavel then turns about the handle end (PIVOT) by REST, and by STRIKE at the
- * moment it hits the round block.
- */
-const PIVOT = { x: 1.05, y: -0.45 };
-const REST = 0.85;
-const STRIKE = 1.46;
-const MID = { x: -0.12, y: 0.08 }; // centre of the whole scene
-const FIT = 0.64; // scales the scene to roughly a unit radius
-
+type V3 = { x: number; y: number; z: number };
+const rand = (a: number, b: number) => a + Math.random() * (b - a);
 function ring(r: number) {
   const a = Math.random() * Math.PI * 2;
   return [Math.cos(a) * r, Math.sin(a) * r] as const;
 }
 
-function gavelPoint(): { x: number; y: number; z: number; block: boolean } {
+/*
+ * The gavel, in its own units (y up). The handle runs up the y axis from its
+ * end at the origin; the head sits across the top with its axis along x. The
+ * gavel turns about the handle end (PIVOT) by REST, and by STRIKE when it
+ * hits the round block.
+ */
+const PIVOT = { x: 1.05, y: -0.45 };
+const REST = 0.85;
+const STRIKE = 1.46;
+const MID = { x: -0.12, y: 0.08 };
+const FIT = 0.64;
+
+function gavelPoint(): V3 & { block: boolean } {
   const k = Math.random();
   if (k < 0.4) {
-    // Head barrel: a cylinder along x, with raised collars near each end.
-    const x = (Math.random() * 2 - 1) * 0.6;
+    const x = rand(-0.6, 0.6);
     const collar = Math.abs(Math.abs(x) - 0.42) < 0.05;
     const [y, z] = ring(collar ? 0.34 : 0.3);
     return { x, y: 1.9 + y, z, block: false };
   }
   if (k < 0.52) {
-    // Head faces: the two flat striking ends.
     const [y, z] = ring(0.3 * Math.sqrt(Math.random()));
     return { x: Math.random() < 0.5 ? -0.6 : 0.6, y: 1.9 + y, z, block: false };
   }
   if (k < 0.72) {
-    // Handle, a little thicker at the grip, with a knob at the end.
     const y = Math.random() * 1.6;
     const r = y < 0.12 ? 0.1 : 0.055 + 0.025 * (1 - y / 1.6);
     const [x, z] = ring(r);
     return { x, y, z, block: false };
   }
-  // The sound block: a low round base where the head lands.
-  const top = Math.random() < 0.55;
-  const bx = -0.85;
-  const by = -1.1;
-  if (top) {
-    const [x, z] = ring(0.55 * Math.sqrt(Math.random()));
-    return { x: bx + x, y: by + 0.18, z, block: true };
+  const [x, z] = Math.random() < 0.55 ? ring(0.55 * Math.sqrt(Math.random())) : ring(0.55);
+  const top = Math.hypot(x, z) < 0.54;
+  return { x: -0.85 + x, y: -1.1 + (top ? 0.18 : Math.random() * 0.18), z, block: true };
+}
+
+/* Shapes below are in screen-like units: y points down, about unit radius. */
+
+/** A stopwatch face-on: rim, ticks, crown, and two hands (hand > 0). */
+function stopwatchPoint(): V3 & { hand: number; len: number } {
+  const k = Math.random();
+  const none = { hand: 0, len: 0 };
+  if (k < 0.34) {
+    // The case: a short cylinder.
+    const [x, y] = ring(0.82);
+    return { x, y: y + 0.1, z: rand(-0.12, 0.12), ...none };
   }
-  const [x, z] = ring(0.55);
-  return { x: bx + x, y: by + Math.random() * 0.18, z, block: true };
+  if (k < 0.44) {
+    // A thin bezel inside the rim.
+    const [x, y] = ring(0.72);
+    return { x, y: y + 0.1, z: 0.12, ...none };
+  }
+  if (k < 0.6) {
+    // Twelve ticks; the one at 12 is longer.
+    const i = Math.floor(Math.random() * 12);
+    const a = (i / 12) * Math.PI * 2;
+    const r = rand(i === 0 ? 0.48 : 0.56, 0.66);
+    return { x: Math.sin(a) * r, y: 0.1 - Math.cos(a) * r, z: 0.12, ...none };
+  }
+  if (k < 0.7) {
+    // Crown and its button on top.
+    if (Math.random() < 0.6) {
+      const [x, z] = ring(0.09);
+      return { x, y: rand(-0.92, -0.74), z, ...none };
+    }
+    return { x: rand(-0.2, 0.2), y: rand(-1.0, -0.94), z: rand(-0.06, 0.06), ...none };
+  }
+  if (k < 0.75) {
+    // A faint glass face.
+    const [x, y] = ring(0.7 * Math.sqrt(Math.random()));
+    return { x, y: y + 0.1, z: 0.13, ...none };
+  }
+  // The hands: 1 is the sweeping second hand, 2 the short minute hand.
+  const hand = Math.random() < 0.6 ? 1 : 2;
+  return { x: 0, y: 0, z: 0.14, hand, len: rand(-0.1, hand === 1 ? 0.62 : 0.4) };
+}
+
+/** Three stacks of coins of different heights, each coin drawn by its rims. */
+const STACKS = [
+  { x: -0.62, z: 0.05, n: 7 },
+  { x: 0.18, z: 0.3, n: 4 },
+  { x: 0.82, z: -0.15, n: 2 },
+];
+const COIN_R = 0.3;
+function coinPoint(): V3 {
+  const total = STACKS.reduce((s, c) => s + c.n, 0);
+  let pick = Math.random() * total;
+  const st = STACKS.find((c) => (pick -= c.n) < 0) ?? STACKS[0];
+  const i = Math.floor(Math.random() * st.n);
+  const wob = Math.sin(i * 2.3 + st.x * 5) * 0.035; // stacks are never quite straight
+  const bottom = 0.8 - i * 0.17; // y down: the bottom coin sits lowest
+  const top = bottom - 0.12;
+  const k = Math.random();
+  const last = i === st.n - 1;
+  if (last && k < 0.35) {
+    // The face of the top coin, with an inner ring like an embossed edge.
+    const [x, z] = ring(Math.random() < 0.4 ? COIN_R * 0.78 : COIN_R * Math.sqrt(Math.random()));
+    return { x: st.x + x + wob, y: top, z: st.z + z };
+  }
+  // Top and bottom rims, and a sparse milled side between them.
+  const [x, z] = ring(COIN_R);
+  const y = k < 0.7 ? top : k < 0.88 ? bottom : rand(top, bottom);
+  return { x: st.x + x + wob, y, z: st.z + z };
+}
+
+/** A magnifying glass, tilted, its handle down and to the right. */
+function lensPoint(): V3 {
+  const k = Math.random();
+  const c = { x: -0.18, y: -0.18 };
+  if (k < 0.55) {
+    // The rim: a torus.
+    const a = Math.random() * Math.PI * 2;
+    const b = Math.random() * Math.PI * 2;
+    const r = 0.6 + 0.07 * Math.cos(b);
+    return { x: c.x + Math.cos(a) * r, y: c.y + Math.sin(a) * r, z: 0.07 * Math.sin(b) };
+  }
+  if (k < 0.65) {
+    // A glint of glass.
+    const [x, y] = ring(0.55 * Math.sqrt(Math.random()));
+    return { x: c.x + x, y: c.y + y, z: 0 };
+  }
+  // The handle, thicker away from the rim.
+  const d = rand(0, 1);
+  const len = 0.68 + d * 0.75;
+  const [u, z] = ring(0.06 + 0.05 * d);
+  const ax = Math.SQRT1_2;
+  return { x: c.x + ax * len - ax * u, y: c.y + ax * len + ax * u, z };
 }
 
 export function LavaField({ anchor, start, pulse, colors = ["#dc5000", "#ff7a2f", "#ffb829", "#ffedd7"] }: Props) {
@@ -123,30 +210,23 @@ export function LavaField({ anchor, start, pulse, colors = ["#dc5000", "#ff7a2f"
     const mobile = window.innerWidth < 768;
     const N = mobile ? 1100 : 3000;
 
-    // Per-ember constants: everything a formation needs, rolled once.
-    const P = Array.from({ length: N }, (_, i) => {
-      const lane = i % 5;
-      // A random direction for the burst, and a point on the gavel or its block.
+    // Per-ember constants: a point on every shape, rolled once.
+    const P = Array.from({ length: N }, () => {
       const u = Math.random() * 2 - 1;
       const th = Math.random() * Math.PI * 2;
       const sq = Math.sqrt(1 - u * u);
       const g = gavelPoint();
+      const sw = stopwatchPoint();
       return {
-        bx: sq * Math.cos(th),
-        by: u,
-        bz: sq * Math.sin(th),
-        gx: g.x,
-        gy: g.y,
-        gz: g.z,
-        block: g.block,
+        dir: { x: sq * Math.cos(th), y: u, z: sq * Math.sin(th) }, // burst direction
+        g,
+        sw,
+        coin: coinPoint(),
+        lens: lensPoint(),
         tri: Math.random() < 0.24, // drawn as a small outlined triangle, not a glow
-        a: Math.random() * Math.PI * 2, // angle on the orb
-        r: 0.62 + 0.38 * Math.pow(Math.random(), 0.7), // radius within the ring
-        sx: Math.random(), // scatter position
-        sy: Math.random(),
+        a: Math.random() * Math.PI * 2,
+        sx: Math.random(),
         drift: 0.2 + Math.random() * 0.8,
-        lane,
-        lx: Math.random(), // position along a lane
         jitter: (Math.random() - 0.5) * 2,
         delay: Math.random() * 0.45, // how late this ember follows a morph
         size: 0.6 + Math.pow(Math.random(), 3) * 2.4,
@@ -159,7 +239,7 @@ export function LavaField({ anchor, start, pulse, colors = ["#dc5000", "#ff7a2f"
       };
     });
 
-    // Where each section sits, so scroll position maps to a formation number.
+    // Where each section sits, so scroll position maps to a shape number.
     let marks: { n: number; y: number }[] = [];
     const measure = () => {
       dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -209,67 +289,89 @@ export function LavaField({ anchor, start, pulse, colors = ["#dc5000", "#ff7a2f"
     let raf = 0;
     let last = performance.now();
 
-    // Rotate a unit-space point by the current spin, then project it.
-    const rot = { cy: 1, sy: 0, cx: 1, sx: 0 };
-    const project = (x: number, y: number, z: number, ox: number, oy: number, R: number, out: { x: number; y: number; s: number }) => {
-      const x1 = x * rot.cy + z * rot.sy;
-      const z1 = -x * rot.sy + z * rot.cy;
-      const y2 = y * rot.cx - z1 * rot.sx;
-      const z2 = y * rot.sx + z1 * rot.cx;
-      const persp = 3.2 / (3.2 + z2); // near points grow, far points shrink
-      out.x = ox + x1 * R * persp;
-      out.y = oy + y2 * R * persp;
-      out.s = persp * persp * (0.55 + 0.45 * (1 - (z2 + 1.2) / 2.4));
+    // Where each shape sits on screen and how big: zigzagging left and right.
+    const frames = [
+      { x: 0, y: 0, r: 0 },
+      { x: 0, y: 0, r: 0 },
+      { x: 0, y: 0, r: 0 },
+      { x: 0, y: 0, r: 0 },
+      { x: 0, y: 0, r: 0 },
+    ];
+    const layout = (box: DOMRect | undefined) => {
+      const narrow = w < 1024;
+      const side = (left: boolean) => (narrow ? w / 2 : w * (left ? 0.27 : 0.73));
+      const R = narrow ? Math.min(w * 0.36, h * 0.28) : Math.min(w * 0.2, h * 0.36);
+      frames[0] = box ? { x: box.left + box.width / 2, y: box.top + box.height / 2, r: box.width * 0.46 } : { x: side(false), y: h / 2, r: R };
+      frames[1] = { x: w / 2, y: h / 2, r: Math.max(w, h) * 0.32 };
+      frames[2] = { x: side(true), y: h * 0.52, r: R };
+      frames[3] = { x: side(false), y: h * 0.5, r: R * 1.05 };
+      frames[4] = { x: side(true), y: h * 0.5, r: R };
+      // On narrow screens the later shapes sit behind the copy, so they step back.
+      dim = narrow ? 0.4 : 1;
     };
+    let dim = 1;
 
-    const target = (p: (typeof P)[number], f: number, t: number, cx: number, cy: number, R: number, out: { x: number; y: number; s: number }) => {
+    // The gavel's swing and the stopwatch hands, updated once a frame.
+    const pose = { c: 1, s: 0 };
+    const hands = { s1: 0, c1: 1, s2: 0, c2: 1 };
+
+    /** A shape's point for this ember, in its own unit space (y down). */
+    const local = (p: (typeof P)[number], f: number, t: number, out: V3 & { fade: number }) => {
+      out.fade = 1;
       switch (f) {
         case 0: {
-          // The gavel swings about the end of its handle; the block stays put.
-          let x = p.gx;
-          let y = p.gy;
-          if (!p.block) {
-            x = p.gx * pose.c - p.gy * pose.s + PIVOT.x;
-            y = p.gx * pose.s + p.gy * pose.c + PIVOT.y;
+          let x = p.g.x;
+          let y = p.g.y;
+          if (!p.g.block) {
+            x = p.g.x * pose.c - p.g.y * pose.s + PIVOT.x;
+            y = p.g.x * pose.s + p.g.y * pose.c + PIVOT.y;
           }
-          const j = 0.008 * Math.sin(t * 1.3 + p.a * 5); // a faint shimmer
-          project((x - MID.x) * FIT + j, -(y - MID.y) * FIT + j, p.gz * FIT, cx, cy, R, out);
+          out.x = (x - MID.x) * FIT;
+          out.y = -(y - MID.y) * FIT;
+          out.z = p.g.z * FIT;
           return;
         }
         case 1: {
-          // Every ember flies straight out from the middle of the screen along
-          // its own direction, wrapping back to the centre: a warp field.
+          // Each ember flies out from the centre along its own direction and
+          // wraps back: a warp field.
           const k = (((p.sx + t * 0.045 * p.drift) % 1) + 1) % 1;
           const d = 0.35 + k * k * 4.2;
-          project(p.bx * d, p.by * d, p.bz * d * 0.4, w / 2, h / 2, Math.max(w, h) * 0.32, out);
-          out.s *= Math.min(1, k * 6) * (0.6 + k * 0.9);
+          out.x = p.dir.x * d;
+          out.y = p.dir.y * d;
+          out.z = p.dir.z * d * 0.4;
+          out.fade = Math.min(1, k * 6);
           return;
         }
         case 2: {
-          // Five lanes, each its own speed. Lane C crawls: it's the DSP that misses the deadline.
-          const speed = [0.05, 0.075, 0.018, 0.06, 0.04][p.lane];
-          const x = (((p.lx + t * speed) % 1) + 1) % 1;
-          const y0 = h * (0.3 + p.lane * 0.1);
-          out.x = x * w * 1.1 - w * 0.05;
-          out.y = y0 + p.jitter * 7 + Math.sin(x * 9 + t + p.lane) * 5;
-          out.s = 1;
+          const q = p.sw;
+          if (q.hand) {
+            const s = q.hand === 1 ? hands.s1 : hands.s2;
+            const c = q.hand === 1 ? hands.c1 : hands.c2;
+            out.x = s * q.len + p.jitter * 0.012;
+            out.y = 0.1 - c * q.len;
+            out.z = q.z;
+            return;
+          }
+          out.x = q.x;
+          out.y = q.y;
+          out.z = q.z;
           return;
         }
-        default: {
-          // A long glowing horizon: the deadline.
-          const x = p.sx;
-          out.x = w * (0.04 + x * 0.92);
-          out.y = h * 0.58 + p.jitter * (3 + 14 * Math.pow(Math.abs(x - 0.5) * 2, 3)) + Math.sin(x * 14 + t * 1.4) * 3;
-          out.s = 1;
-        }
+        case 3:
+          out.x = p.coin.x;
+          out.y = p.coin.y;
+          out.z = p.coin.z;
+          return;
+        default:
+          out.x = p.lens.x;
+          out.y = p.lens.y;
+          out.z = p.lens.z;
       }
     };
 
-    // The gavel's swing: resting raised, it comes down on each sale and lifts again.
-    const pose = { c: 1, s: 0 };
-    const A = { x: 0, y: 0, s: 1 };
-    const B = { x: 0, y: 0, s: 1 };
-    const scrollSpin = () => window.scrollY * 0.0026;
+    const A = { x: 0, y: 0, z: 0, fade: 1 };
+    const B = { x: 0, y: 0, z: 0, fade: 1 };
+    const rot = { cy: 1, sy: 0, cx: 1, sx: 0 };
 
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
@@ -278,55 +380,75 @@ export function LavaField({ anchor, start, pulse, colors = ["#dc5000", "#ff7a2f"
       const t = reduce ? 0 : now / 1000;
       const s = state.current;
 
-      // Orb geometry follows its anchor (so it scrolls up with the hero).
-      const box = anchor.current?.getBoundingClientRect();
-      const cx = box ? box.left + box.width / 2 : w / 2;
-      const cy = box ? box.top + box.height / 2 : h / 2;
+      layout(anchor.current?.getBoundingClientRect());
       const pulseK = Math.exp(-(now - s.pulseAt) / 500);
-      const R = box ? box.width * 0.46 : Math.min(w, h) * 0.3;
-      // Turn: a slow sway of its own, plus a full turn as you scroll.
-      // It sways through a three-quarter view rather than spinning all the way
-      // round, so the swing of the gavel always faces you.
-      const ry = (reduce ? -0.35 : -0.35 + 0.5 * Math.sin(t * 0.32)) + scrollSpin();
-      const rx = 0.28 + (reduce ? 0 : 0.12 * Math.sin(t * 0.23)) + window.scrollY * 0.0005;
-      const sincePulse = (now - s.pulseAt) / 1000;
-      const hit = reduce || sincePulse < 0 ? 0 : sincePulse < 0.14 ? Math.pow(sincePulse / 0.14, 2) : Math.exp(-(sincePulse - 0.14) / 0.35);
-      const swing = REST + (STRIKE - REST) * hit + (reduce ? 0 : 0.03 * Math.sin(t * 0.9));
-      pose.c = Math.cos(swing);
-      pose.s = Math.sin(swing);
-      rot.cy = Math.cos(ry);
-      rot.sy = Math.sin(ry);
-      rot.cx = Math.cos(rx);
-      rot.sx = Math.sin(rx);
 
-      // Ease the formation number toward the scroll position.
+      // Ease the shape number toward the scroll position.
       const want = phaseAt(window.scrollY + h / 2);
       phase += (want - phase) * (reduce ? 1 : 1 - Math.pow(0.0008, dt));
       const f0 = Math.min(FORMATIONS - 2, Math.floor(phase));
       const frac = Math.min(1, Math.max(0, phase - f0));
 
-      // Opening burst: everything starts at the centre and blooms out.
+      // Turn: a gentle sway so each shape shows its depth, plus one full
+      // revolution per section, so morphs look like the object rotating.
+      const ry = (reduce ? -0.3 : -0.3 + 0.45 * Math.sin(t * 0.32)) + (reduce ? 0 : phase * Math.PI * 2);
+      const rx = 0.26 + (reduce ? 0 : 0.1 * Math.sin(t * 0.23));
+      rot.cy = Math.cos(ry);
+      rot.sy = Math.sin(ry);
+      rot.cx = Math.cos(rx);
+      rot.sx = Math.sin(rx);
+
+      const sincePulse = (now - s.pulseAt) / 1000;
+      const hit = reduce || sincePulse < 0 ? 0 : sincePulse < 0.14 ? Math.pow(sincePulse / 0.14, 2) : Math.exp(-(sincePulse - 0.14) / 0.35);
+      const swing = REST + (STRIKE - REST) * hit + (reduce ? 0 : 0.03 * Math.sin(t * 0.9));
+      pose.c = Math.cos(swing);
+      pose.s = Math.sin(swing);
+      const a1 = reduce ? 1.2 : t * 1.4;
+      const a2 = reduce ? 4.4 : 4.4 + t * 0.05;
+      hands.s1 = Math.sin(a1);
+      hands.c1 = Math.cos(a1);
+      hands.s2 = Math.sin(a2);
+      hands.c2 = Math.cos(a2);
+
       const since = s.start ? (now - s.startedAt) / 1000 : 0;
+      const FA = frames[f0];
+      const FB = frames[f0 + 1];
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
-      const tris = colors.map(() => new Path2D());
       ctx.globalCompositeOperation = "lighter";
+      const tris = colors.map(() => new Path2D());
+      // Fade toward `dim` as the page moves past the burst.
+      const on = (s.start || reduce ? 1 : 0) * (1 - (1 - dim) * Math.min(1, Math.max(0, phase - 1)));
 
       for (let i = 0; i < N; i++) {
         const p = P[i];
-        target(p, f0, t, cx, cy, R, A);
-        target(p, f0 + 1, t, cx, cy, R, B);
+        local(p, f0, t, A);
+        local(p, f0 + 1, t, B);
         const k = smooth(Math.min(1, Math.max(0, (frac - p.delay) / (1 - 0.45))));
-        let x = A.x + (B.x - A.x) * k;
-        let y = A.y + (B.y - A.y) * k;
-        const depth = Math.min(1.5, A.s + (B.s - A.s) * k);
+        // Blend in 3D, then rotate and project, so a morph turns as it goes.
+        const lx = A.x + (B.x - A.x) * k;
+        const ly = A.y + (B.y - A.y) * k;
+        const lz = A.z + (B.z - A.z) * k;
+        const ox = FA.x + (FB.x - FA.x) * k;
+        const oy = FA.y + (FB.y - FA.y) * k;
+        const R = FA.r + (FB.r - FA.r) * k;
+        const fade = A.fade + (B.fade - A.fade) * k;
+
+        const x1 = lx * rot.cy + lz * rot.sy;
+        const z1 = -lx * rot.sy + lz * rot.cy;
+        const y2 = ly * rot.cx - z1 * rot.sx;
+        const z2 = ly * rot.sx + z1 * rot.cx;
+        const persp = 3.2 / (3.2 + z2); // near points grow, far points shrink
+        let x = ox + x1 * R * persp;
+        let y = oy + y2 * R * persp;
+        const depth = Math.min(1.5, persp * persp * (0.55 + 0.45 * (1 - (z2 + 1.2) / 2.4))) * fade;
 
         let bloom = 1;
         if (!reduce) {
           bloom = s.start ? expoOut(Math.max(0, (since - p.burst * 0.6) / 1.6)) : 0;
-          x = cx + (x - cx) * bloom;
-          y = cy + (y - cy) * bloom;
+          x = ox + (x - ox) * bloom;
+          y = oy + (y - oy) * bloom;
         }
 
         // Embers shy away from the cursor and drift back.
@@ -350,7 +472,6 @@ export function LavaField({ anchor, start, pulse, colors = ["#dc5000", "#ff7a2f"
 
         if (x < -40 || x > w + 40 || y < -40 || y > h + 40 || depth < 0.02) continue;
         const flicker = 0.75 + 0.25 * Math.sin(t * 3 + i);
-        const on = s.start || reduce ? 1 : 0;
         if (p.tri) {
           // Small outlined triangles, tumbling: they give the cloud a crisp grain.
           if (depth < 0.55) continue; // only the near side shows its glyphs
@@ -367,12 +488,12 @@ export function LavaField({ anchor, start, pulse, colors = ["#dc5000", "#ff7a2f"
           path.closePath();
           continue;
         }
-        const size = p.size * 3.6 * depth * (0.6 + 0.4 * bloom) * (1 + pulseK * 0.4);
-        // Depth cue: the far side of the cloud fades back, the near side glows.
+        const size = p.size * 3.6 * depth * (0.6 + 0.4 * bloom) * (1 + pulseK * 0.3);
+        // Depth cue: the far side fades back, the near side glows.
         ctx.globalAlpha = Math.min(0.95, Math.max(0.06, (depth - 0.25) * 1.1) * (0.7 + 0.3 * flicker)) * on;
         ctx.drawImage(sprites[p.color], x - size / 2, y - size / 2, size, size);
       }
-      ctx.globalAlpha = (s.start || reduce ? 0.75 : 0);
+      ctx.globalAlpha = 0.75 * on;
       ctx.lineWidth = 1;
       tris.forEach((path, ci) => {
         ctx.strokeStyle = colors[ci];

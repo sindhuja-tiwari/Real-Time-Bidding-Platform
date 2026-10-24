@@ -168,7 +168,8 @@ export default function LivePage() {
       {/* LEDGER */}
       <section data-lava="3" className="relative z-10 px-5 pb-28 md:px-8">
         <DashRule />
-        <div className="grid gap-10 pt-16 lg:grid-cols-[1fr_2fr]">
+        {/* Copy on the left; the coins stack up on the right. */}
+        <div className="flex flex-col gap-10 pt-16 lg:mr-[48%] lg:min-h-[85vh] lg:justify-center">
           <h2 className="text-[41px] font-medium uppercase leading-[0.9]">
             The
             <br />
@@ -201,9 +202,10 @@ export default function LivePage() {
       </section>
 
       {/* INCIDENTS TEASER */}
-      <section data-lava="3" className="relative z-10 px-5 pb-28 md:px-8">
+      <section data-lava="4" className="relative z-10 px-5 pb-28 md:px-8">
         <DashRule />
-        <Link href="/incidents" className="group grid gap-10 pt-16 lg:grid-cols-[1fr_2fr] lg:items-end">
+        {/* Copy on the right; the magnifying glass on the left. */}
+        <Link href="/incidents" className="group flex flex-col gap-10 pt-16 lg:ml-[48%] lg:min-h-[75vh] lg:justify-center">
           <div>
             <div className="text-[12px] font-medium uppercase" style={{ color: T.saffron }}>
               When it breaks
@@ -232,7 +234,7 @@ export default function LivePage() {
       </section>
 
       {/* FOOTER CTA */}
-      <section data-lava="3" className="relative z-10 px-5 pb-16 md:px-8">
+      <section data-lava="4" className="relative z-10 px-5 pb-16 md:px-8">
         <DashRule />
         <Link href="/auctions" className="group mt-12 flex items-end justify-between gap-6">
           <span className="text-[13vw] font-medium uppercase leading-[0.8] tracking-[-0.03em] transition-colors duration-500 group-hover:text-[#dc5000]">
@@ -311,7 +313,8 @@ function Field() {
   return (
     <section data-lava="2" className="relative z-10 px-5 pb-28 md:px-8">
       <DashRule />
-      <div className="grid gap-12 pt-16 lg:grid-cols-[1fr_1.4fr]">
+      {/* Copy on the right; the stopwatch turns on the left. */}
+      <div className="flex flex-col gap-12 pt-16 lg:ml-[48%] lg:min-h-[85vh] lg:justify-center">
         <div>
           <div className="text-[12px] font-medium uppercase" style={{ color: T.saffron }}>
             The field
