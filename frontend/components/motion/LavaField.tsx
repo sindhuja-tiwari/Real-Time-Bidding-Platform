@@ -8,8 +8,10 @@ import { useEffect, useRef, type RefObject } from "react";
  * `data-lava="n"`, and as you scroll the embers flow from one formation to the
  * next, each on its own slight delay so the shape melts rather than snaps.
  *
- *   0  orb      a slow, swirling ring around the live auction
- *   1  embers   the ring bursts and drifts up across the screen
+ *   0  core     a 3D cloud of embers on the right of the hero; it turns
+ *               slowly on its own and turns further as you scroll
+ *   1  burst    the core slides to the middle of the screen and blows
+ *               outward from there, a warp-field streaming toward you
  *   2  lanes    five streams, one per DSP, each at its own speed
  *   3  line     everything settles into the 100 ms deadline
  */
@@ -68,12 +70,30 @@ export function LavaField({ anchor, start, pulse, colors = ["#dc5000", "#ff7a2f"
     let h = 0;
     let dpr = 1;
     const mobile = window.innerWidth < 768;
-    const N = mobile ? 650 : 1500;
+    const N = mobile ? 1100 : 3000;
 
     // Per-ember constants: everything a formation needs, rolled once.
     const P = Array.from({ length: N }, (_, i) => {
       const lane = i % 5;
+      // A random direction, pushed out to a lumpy two-lobed surface.
+      const u = Math.random() * 2 - 1;
+      const th = Math.random() * Math.PI * 2;
+      const sq = Math.sqrt(1 - u * u);
+      let dx = sq * Math.cos(th);
+      let dy = u;
+      let dz = sq * Math.sin(th);
+      const folds = 1 + 0.13 * Math.sin(7 * th + 3 * Math.sin(5 * u)) + 0.06 * Math.sin(13 * u + 2 * th);
+      const groove = 1 - 0.12 * Math.exp(-(dx * dx) * 60) * (dy > -0.3 ? 1 : 0); // the split between lobes
+      const shell = Math.random() < 0.82 ? 0.93 + 0.07 * Math.random() : 0.35 + 0.5 * Math.random(); // mostly skin, a little core
+      const rr = folds * groove * shell;
+      dx *= rr * 1.12;
+      dy *= rr * 0.86;
+      dz *= rr * 0.98;
       return {
+        px: dx,
+        py: dy,
+        pz: dz,
+        tri: Math.random() < 0.24, // drawn as a small outlined triangle, not a glow
         a: Math.random() * Math.PI * 2, // angle on the orb
         r: 0.62 + 0.38 * Math.pow(Math.random(), 0.7), // radius within the ring
         sx: Math.random(), // scatter position
@@ -143,22 +163,34 @@ export function LavaField({ anchor, start, pulse, colors = ["#dc5000", "#ff7a2f"
     let raf = 0;
     let last = performance.now();
 
-    const target = (p: (typeof P)[number], f: number, t: number, cx: number, cy: number, R: number, out: { x: number; y: number }) => {
+    // Rotate a unit-space point by the current spin, then project it.
+    const rot = { cy: 1, sy: 0, cx: 1, sx: 0 };
+    const project = (x: number, y: number, z: number, ox: number, oy: number, R: number, out: { x: number; y: number; s: number }) => {
+      const x1 = x * rot.cy + z * rot.sy;
+      const z1 = -x * rot.sy + z * rot.cy;
+      const y2 = y * rot.cx - z1 * rot.sx;
+      const z2 = y * rot.sx + z1 * rot.cx;
+      const persp = 3.2 / (3.2 + z2); // near points grow, far points shrink
+      out.x = ox + x1 * R * persp;
+      out.y = oy + y2 * R * persp;
+      out.s = persp * persp * (0.55 + 0.45 * (1 - (z2 + 1.2) / 2.4));
+    };
+
+    const target = (p: (typeof P)[number], f: number, t: number, cx: number, cy: number, R: number, out: { x: number; y: number; s: number }) => {
       switch (f) {
         case 0: {
-          // Inner embers circle faster than outer ones, so the ring churns like lava.
-          const ang = p.a + t * (0.18 / p.r);
-          const wob = Math.sin(p.a * 3 + t * 0.9) * 0.05 + Math.sin(p.a * 7 - t * 1.3) * 0.025;
-          const rr = R * (p.r + wob);
-          out.x = cx + Math.cos(ang) * rr;
-          out.y = cy + Math.sin(ang) * rr;
+          // The core, breathing a little.
+          const breathe = 1 + 0.025 * Math.sin(t * 1.1 + p.a * 2);
+          project(p.px * breathe, p.py * breathe, p.pz * breathe, cx, cy, R, out);
           return;
         }
         case 1: {
-          // Drift upward, wrapping round, with a gentle sideways sway.
-          const y = (((p.sy - t * 0.02 * p.drift) % 1) + 1) % 1;
-          out.x = p.sx * w + Math.sin(t * 0.6 + p.a * 5) * 24;
-          out.y = y * h * 1.1 - h * 0.05;
+          // Every ember flies straight out from the middle of the screen along
+          // its own direction, wrapping back to the centre: a warp field.
+          const k = (((p.sx + t * 0.045 * p.drift) % 1) + 1) % 1;
+          const d = 0.35 + k * k * 4.2;
+          project(p.px * d, p.py * d, p.pz * d * 0.4, w / 2, h / 2, Math.max(w, h) * 0.32, out);
+          out.s *= Math.min(1, k * 6) * (0.6 + k * 0.9);
           return;
         }
         case 2: {
@@ -168,6 +200,7 @@ export function LavaField({ anchor, start, pulse, colors = ["#dc5000", "#ff7a2f"
           const y0 = h * (0.3 + p.lane * 0.1);
           out.x = x * w * 1.1 - w * 0.05;
           out.y = y0 + p.jitter * 7 + Math.sin(x * 9 + t + p.lane) * 5;
+          out.s = 1;
           return;
         }
         default: {
@@ -175,12 +208,14 @@ export function LavaField({ anchor, start, pulse, colors = ["#dc5000", "#ff7a2f"
           const x = p.sx;
           out.x = w * (0.04 + x * 0.92);
           out.y = h * 0.58 + p.jitter * (3 + 14 * Math.pow(Math.abs(x - 0.5) * 2, 3)) + Math.sin(x * 14 + t * 1.4) * 3;
+          out.s = 1;
         }
       }
     };
 
-    const A = { x: 0, y: 0 };
-    const B = { x: 0, y: 0 };
+    const A = { x: 0, y: 0, s: 1 };
+    const B = { x: 0, y: 0, s: 1 };
+    const scrollSpin = () => window.scrollY * 0.0026;
 
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
@@ -194,7 +229,14 @@ export function LavaField({ anchor, start, pulse, colors = ["#dc5000", "#ff7a2f"
       const cx = box ? box.left + box.width / 2 : w / 2;
       const cy = box ? box.top + box.height / 2 : h / 2;
       const pulseK = Math.exp(-(now - s.pulseAt) / 500);
-      const R = (box ? box.width * 0.46 : Math.min(w, h) * 0.3) * (1 + 0.12 * pulseK);
+      const R = (box ? box.width * 0.44 : Math.min(w, h) * 0.3) * (1 + 0.08 * pulseK);
+      // Spin: a slow turn of its own, plus more as you scroll.
+      const ry = (reduce ? 0.6 : t * 0.16) + scrollSpin();
+      const rx = 0.28 + (reduce ? 0 : 0.12 * Math.sin(t * 0.23)) + window.scrollY * 0.0005;
+      rot.cy = Math.cos(ry);
+      rot.sy = Math.sin(ry);
+      rot.cx = Math.cos(rx);
+      rot.sx = Math.sin(rx);
 
       // Ease the formation number toward the scroll position.
       const want = phaseAt(window.scrollY + h / 2);
@@ -207,6 +249,7 @@ export function LavaField({ anchor, start, pulse, colors = ["#dc5000", "#ff7a2f"
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
+      const tris = colors.map(() => new Path2D());
       ctx.globalCompositeOperation = "lighter";
 
       for (let i = 0; i < N; i++) {
@@ -216,6 +259,7 @@ export function LavaField({ anchor, start, pulse, colors = ["#dc5000", "#ff7a2f"
         const k = smooth(Math.min(1, Math.max(0, (frac - p.delay) / (1 - 0.45))));
         let x = A.x + (B.x - A.x) * k;
         let y = A.y + (B.y - A.y) * k;
+        const depth = Math.min(1.5, A.s + (B.s - A.s) * k);
 
         let bloom = 1;
         if (!reduce) {
@@ -243,12 +287,36 @@ export function LavaField({ anchor, start, pulse, colors = ["#dc5000", "#ff7a2f"
         x += p.x;
         y += p.y;
 
-        if (x < -40 || x > w + 40 || y < -40 || y > h + 40) continue;
+        if (x < -40 || x > w + 40 || y < -40 || y > h + 40 || depth < 0.02) continue;
         const flicker = 0.75 + 0.25 * Math.sin(t * 3 + i);
-        const size = p.size * 7 * (0.6 + 0.4 * bloom) * (1 + pulseK * 0.4);
-        ctx.globalAlpha = (0.35 + 0.3 * flicker) * (s.start || reduce ? 1 : 0);
+        const on = s.start || reduce ? 1 : 0;
+        if (p.tri) {
+          // Small outlined triangles, tumbling: they give the cloud a crisp grain.
+          if (depth < 0.55) continue; // only the near side shows its glyphs
+          const r = (1.5 + p.size * 0.9) * depth * (0.6 + 0.4 * bloom);
+          const a0 = p.a + t * 0.8 * p.jitter;
+          const path = tris[p.color % tris.length];
+          for (let v = 0; v < 3; v++) {
+            const av = a0 + (v * Math.PI * 2) / 3;
+            const tx = x + Math.cos(av) * r;
+            const ty = y + Math.sin(av) * r;
+            if (v === 0) path.moveTo(tx, ty);
+            else path.lineTo(tx, ty);
+          }
+          path.closePath();
+          continue;
+        }
+        const size = p.size * 3.6 * depth * (0.6 + 0.4 * bloom) * (1 + pulseK * 0.4);
+        // Depth cue: the far side of the cloud fades back, the near side glows.
+        ctx.globalAlpha = Math.min(0.95, Math.max(0.06, (depth - 0.25) * 1.1) * (0.7 + 0.3 * flicker)) * on;
         ctx.drawImage(sprites[p.color], x - size / 2, y - size / 2, size, size);
       }
+      ctx.globalAlpha = (s.start || reduce ? 0.75 : 0);
+      ctx.lineWidth = 1;
+      tris.forEach((path, ci) => {
+        ctx.strokeStyle = colors[ci];
+        ctx.stroke(path);
+      });
       ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = "source-over";
     };

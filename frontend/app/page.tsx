@@ -39,7 +39,7 @@ export default function LivePage() {
   useEffect(() => {
     if (!ready) return;
     const tl = gsap.timeline({ defaults: { ease: "expo.out" } });
-    tl.fromTo(object.current, { scale: 0.85, opacity: 0, rotate: -12 }, { scale: 1, opacity: 1, rotate: 0, duration: 1.8 }, 0.5)
+    tl.fromTo(object.current, { scale: 0.85, opacity: 0 }, { scale: 1, opacity: 1, duration: 1.8 }, 0.5)
       .fromTo(left.current?.querySelectorAll("[data-in]") ?? [], { y: 60, opacity: 0 }, { y: 0, opacity: 1, duration: 1.2, stagger: 0.08 }, 0.15)
       .fromTo(right.current?.querySelectorAll("[data-in]") ?? [], { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 1.2, stagger: 0.08 }, 0.35);
     return () => {
@@ -53,7 +53,7 @@ export default function LivePage() {
   useEffect(() => {
     const ctx = gsap.context(() => {
       const st = { trigger: hero.current, start: "top top", end: "bottom top", scrub: 0.8 };
-      gsap.fromTo(object.current, { rotate: 0, scale: 1, yPercent: 0 }, { rotate: 35, scale: 0.72, yPercent: 18, ease: "none", immediateRender: false, scrollTrigger: st });
+      gsap.fromTo(object.current, { scale: 1, yPercent: 0 }, { scale: 0.8, yPercent: 12, ease: "none", immediateRender: false, scrollTrigger: st });
       gsap.fromTo(left.current, { yPercent: 0, opacity: 1 }, { yPercent: -30, opacity: 0, ease: "none", immediateRender: false, scrollTrigger: st });
       gsap.fromTo(right.current, { yPercent: 0, opacity: 1 }, { yPercent: -45, opacity: 0, ease: "none", immediateRender: false, scrollTrigger: st });
     });
@@ -75,13 +75,14 @@ export default function LivePage() {
       <section
         ref={hero}
         data-lava="0"
-        className="relative z-10 grid min-h-[100svh] grid-cols-1 items-center gap-6 px-5 pb-16 pt-28 md:px-8 lg:grid-cols-[1fr_minmax(420px,600px)_1fr]"
+        className="relative z-10 grid min-h-[100svh] grid-cols-1 items-center gap-6 px-5 pb-16 pt-28 md:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:gap-10"
       >
-        <div ref={left} className="order-2 lg:order-1">
+        <div className="order-2 flex flex-col gap-10 lg:order-1">
+        <div ref={left}>
           <div data-in className="text-[12px] font-medium uppercase opacity-0" style={{ color: T.drift }}>
             Auction №{String(overview?.total_auctions ?? 0).padStart(4, "0")} · {isDemo ? "Simulated" : "Live"}
           </div>
-          <h1 data-in className="mt-4 text-[44px] font-medium uppercase leading-[0.92] opacity-0 md:text-[56px]">
+          <h1 data-in className="mt-4 max-w-[13ch] text-[44px] font-medium uppercase leading-[0.9] tracking-[-0.02em] opacity-0 md:text-[68px]">
             <SwapText key={headline} text={headline} />
           </h1>
           <div data-in className="mt-10 opacity-0">
@@ -100,28 +101,8 @@ export default function LivePage() {
           </div>
         </div>
 
-        <div ref={object} className="relative order-1 mx-auto aspect-square w-full max-w-[600px] opacity-0 lg:order-2">
-          <div className="absolute inset-[9%]">
-            {bids.length > 0 && (
-              <RadialRace
-                bids={bids}
-                uppercase
-                theme={{
-                  ring: "rgba(255,237,215,0.07)",
-                  deadline: T.ember,
-                  dot: T.cream,
-                  winner: T.saffron,
-                  timeout: T.ember,
-                  label: T.cream,
-                  muted: T.drift,
-                }}
-              />
-            )}
-          </div>
-        </div>
-
-        <div ref={right} className="order-3 max-w-[440px] lg:justify-self-end">
-          <p data-in className="text-[24px] leading-[1.26] opacity-0 md:text-[28px]">
+        <div ref={right} className="max-w-[520px]">
+          <p data-in className="text-[19px] font-light leading-[1.4] opacity-0 md:text-[21px]" style={{ color: "#d9c8b2" }}>
             <SwapText key={a?.id ?? "x"} text={bids.length ? narrate(bids, a?.clearing_price) : "Five demand-side platforms are about to bid."} stagger={0.012} />
           </p>
           <div
@@ -151,6 +132,28 @@ export default function LivePage() {
             >
               Autoplay {auto ? "on" : "off"}
             </button>
+          </div>
+        </div>
+
+        </div>
+
+        <div ref={object} className="relative order-1 mx-auto aspect-square w-full max-w-[720px] opacity-0 lg:order-2">
+          <div className="absolute inset-[24%]">
+            {bids.length > 0 && (
+              <RadialRace
+                bids={bids}
+                uppercase
+                theme={{
+                  ring: "rgba(255,237,215,0.07)",
+                  deadline: T.ember,
+                  dot: T.cream,
+                  winner: T.saffron,
+                  timeout: T.ember,
+                  label: T.cream,
+                  muted: T.drift,
+                }}
+              />
+            )}
           </div>
         </div>
 
