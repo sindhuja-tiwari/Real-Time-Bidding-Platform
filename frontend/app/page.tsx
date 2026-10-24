@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import Counter from "@/components/reactbits/Counter";
@@ -14,7 +13,7 @@ import { useLiveAuctions } from "@/lib/live";
 import { useData, useQuery } from "@/lib/data";
 import type { Bid } from "@/lib/api";
 import { T } from "@/lib/theme";
-import { RadialRace, narrate } from "@/components/ui/RadialRace";
+import { narrate } from "@/components/ui/RadialRace";
 import { SwapText } from "@/components/motion/SwapText";
 import { DashRule } from "@/components/motion/DashRule";
 import { useInView } from "@/components/motion/hooks";
@@ -25,9 +24,8 @@ gsap.registerPlugin(ScrollTrigger);
 
 export default function LivePage() {
   const ready = useReady();
-  const router = useRouter();
   const [auto, setAuto] = useState(true);
-  const { last, history, overview, run, running } = useLiveAuctions({ autoMs: auto ? 3400 : 0, historySize: 8 });
+  const { last, history, overview, run, running, hold } = useLiveAuctions({ autoMs: auto ? 3400 : 0, historySize: 8 });
   const { isDemo } = useData();
   const a = last?.auction;
   const bids = last?.bids ?? [];
@@ -41,7 +39,7 @@ export default function LivePage() {
   useEffect(() => {
     if (!ready) return;
     const tl = gsap.timeline({ defaults: { ease: "expo.out" } });
-    tl.fromTo(object.current, { scale: 0.85, opacity: 0, rotate: -12 }, { scale: 1, opacity: 1, rotate: 0, duration: 1.8 }, 0.5)
+    tl.fromTo(object.current, { scale: 0.85, opacity: 0 }, { scale: 1, opacity: 1, duration: 1.8 }, 0.5)
       .fromTo(left.current?.querySelectorAll("[data-in]") ?? [], { y: 60, opacity: 0 }, { y: 0, opacity: 1, duration: 1.2, stagger: 0.08 }, 0.15)
       .fromTo(right.current?.querySelectorAll("[data-in]") ?? [], { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 1.2, stagger: 0.08 }, 0.35);
     return () => {
@@ -55,7 +53,7 @@ export default function LivePage() {
   useEffect(() => {
     const ctx = gsap.context(() => {
       const st = { trigger: hero.current, start: "top top", end: "bottom top", scrub: 0.8 };
-      gsap.fromTo(object.current, { rotate: 0, scale: 1, yPercent: 0 }, { rotate: 35, scale: 0.72, yPercent: 18, ease: "none", immediateRender: false, scrollTrigger: st });
+      gsap.fromTo(object.current, { scale: 1, yPercent: 0 }, { scale: 0.8, yPercent: 12, ease: "none", immediateRender: false, scrollTrigger: st });
       gsap.fromTo(left.current, { yPercent: 0, opacity: 1 }, { yPercent: -30, opacity: 0, ease: "none", immediateRender: false, scrollTrigger: st });
       gsap.fromTo(right.current, { yPercent: 0, opacity: 1 }, { yPercent: -45, opacity: 0, ease: "none", immediateRender: false, scrollTrigger: st });
     });
@@ -65,7 +63,7 @@ export default function LivePage() {
   // The winner's own response time: the auction as a whole can run past 100 ms while it waits out slow DSPs.
   const winnerMs = bids.find((b) => b.status === "WON")?.response_time_ms;
   const headline = a?.winning_dsp_name
-    ? `Sold to ${a.winning_dsp_name}${winnerMs != null ? ` in ${winnerMs} ms` : ""}`
+    ? `Sold to *${a.winning_dsp_name}*${winnerMs != null ? ` in ${winnerMs} ms` : ""}`
     : a
       ? "No valid bids this round"
       : "Waiting for the first bid";
@@ -77,13 +75,14 @@ export default function LivePage() {
       <section
         ref={hero}
         data-lava="0"
-        className="relative z-10 grid min-h-[100svh] grid-cols-1 items-center gap-6 px-5 pb-16 pt-28 md:px-8 lg:grid-cols-[1fr_minmax(420px,600px)_1fr]"
+        className="relative z-10 grid min-h-[100svh] grid-cols-1 items-center gap-6 px-5 pb-16 pt-28 md:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:gap-10"
       >
-        <div ref={left} className="order-2 lg:order-1">
+        <div className="order-2 flex flex-col gap-10 lg:order-1">
+        <div ref={left}>
           <div data-in className="text-[12px] font-medium uppercase opacity-0" style={{ color: T.drift }}>
             Auction №{String(overview?.total_auctions ?? 0).padStart(4, "0")} · {isDemo ? "Simulated" : "Live"}
           </div>
-          <h1 data-in className="mt-4 text-[44px] font-medium uppercase leading-[0.92] opacity-0 md:text-[56px]">
+          <h1 data-in className="mt-4 max-w-[13ch] text-[44px] font-medium uppercase leading-[0.9] tracking-[-0.02em] opacity-0 md:text-[68px]">
             <SwapText key={headline} text={headline} />
           </h1>
           <div data-in className="mt-10 opacity-0">
@@ -102,35 +101,20 @@ export default function LivePage() {
           </div>
         </div>
 
-        <div ref={object} className="relative order-1 mx-auto aspect-square w-full max-w-[600px] opacity-0 lg:order-2">
-          <div className="absolute inset-[9%]">
-            {bids.length > 0 && (
-              <RadialRace
-                bids={bids}
-                uppercase
-                theme={{
-                  ring: "rgba(255,237,215,0.07)",
-                  deadline: T.ember,
-                  dot: T.cream,
-                  winner: T.saffron,
-                  timeout: T.ember,
-                  label: T.cream,
-                  muted: T.drift,
-                }}
-              />
-            )}
-          </div>
-        </div>
-
-        <div ref={right} className="order-3 max-w-[440px] lg:justify-self-end">
-          <p data-in className="text-[24px] leading-[1.26] opacity-0 md:text-[28px]">
+        <div ref={right} className="max-w-[520px]">
+          <p data-in className="text-[19px] font-light leading-[1.4] opacity-0 md:text-[21px]" style={{ color: "#d9c8b2" }}>
             <SwapText key={a?.id ?? "x"} text={bids.length ? narrate(bids, a?.clearing_price) : "Five demand-side platforms are about to bid."} stagger={0.012} />
           </p>
-          <div data-in className="mt-10 flex flex-wrap items-center gap-4 opacity-0">
+          <div
+            data-in
+            className="mt-10 flex flex-wrap items-center gap-4 opacity-0"
+            onPointerEnter={() => hold(true)}
+            onPointerLeave={() => hold(false)}
+          >
             <Magnet padding={60} magnetStrength={2.5}>
               <button
                 onClick={() => run()}
-                disabled={running}
+                aria-busy={running}
                 className="group relative overflow-hidden rounded-[36px] px-7 py-[15px] text-[13px] font-medium uppercase"
                 style={{ background: T.bark, color: T.cream }}
               >
@@ -150,6 +134,11 @@ export default function LivePage() {
             </button>
           </div>
         </div>
+
+        </div>
+
+        {/* Placeholder that sizes and positions the 3D gavel drawn by LavaField. */}
+        <div ref={object} aria-hidden className="relative order-1 mx-auto aspect-square w-full max-w-[720px] lg:order-2" />
 
         <div className="pointer-events-none absolute bottom-6 left-1/2 hidden -translate-x-1/2 flex-col items-center gap-2 text-[11px] font-medium uppercase md:flex" style={{ color: T.drift }}>
           Scroll
@@ -185,11 +174,11 @@ export default function LivePage() {
             <br />
             ledger
           </h2>
-          <div>
+          <div onPointerEnter={() => hold(true)} onPointerLeave={() => hold(false)}>
             {history.map((h, i) => (
-              <button
+              <Link
                 key={h.id}
-                onClick={() => router.push(`/auctions/${h.id}`)}
+                href={`/auctions/${h.id}`}
                 className="group relative grid w-full grid-cols-[1.4fr_1fr_0.8fr_0.7fr] items-baseline gap-4 border-b border-dashed py-5 text-left text-[13px] uppercase md:text-[14px]"
                 style={{ borderColor: T.cork, animation: `rowIn 900ms cubic-bezier(.2,.8,.2,1) ${i * 60}ms both` }}
               >
@@ -205,10 +194,41 @@ export default function LivePage() {
                 <span className="relative text-right tabular-nums" style={{ color: T.drift }}>
                   {h.duration_ms} ms <span className="inline-block transition-transform duration-500 group-hover:translate-x-1">→</span>
                 </span>
-              </button>
+              </Link>
             ))}
           </div>
         </div>
+      </section>
+
+      {/* INCIDENTS TEASER */}
+      <section data-lava="3" className="relative z-10 px-5 pb-28 md:px-8">
+        <DashRule />
+        <Link href="/incidents" className="group grid gap-10 pt-16 lg:grid-cols-[1fr_2fr] lg:items-end">
+          <div>
+            <div className="text-[12px] font-medium uppercase" style={{ color: T.saffron }}>
+              When it breaks
+            </div>
+            <h2 className="mt-4 text-[41px] font-medium uppercase leading-[0.9]">
+              Every outage
+              <br />
+              has a <span className="accent-serif">cause.</span>
+            </h2>
+          </div>
+          <div className="flex flex-wrap items-end justify-between gap-8">
+            <p className="max-w-md text-[17px] leading-relaxed" style={{ color: "#b5a690" }}>
+              EvidenceOps breaks this engine on purpose: slow DSPs, bad configs, a starved database pool. Then it works out why,
+              cites the logs and metrics it used, and proves a fix in a sandbox before anyone touches production.
+            </p>
+            <span className="flex items-baseline gap-3">
+              <span className="font-serif text-[96px] italic leading-none transition-colors duration-500 group-hover:text-[#dc5000] md:text-[128px]">
+                22/22
+              </span>
+              <span className="max-w-[10ch] text-[12px] font-medium uppercase" style={{ color: T.drift }}>
+                incidents called right →
+              </span>
+            </span>
+          </div>
+        </Link>
       </section>
 
       {/* FOOTER CTA */}

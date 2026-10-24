@@ -6,6 +6,8 @@ import { PageHeader, Panel } from "@/components/ui/primitives";
 import { DashRule } from "@/components/motion/DashRule";
 import { Reveal } from "@/components/motion/Reveal";
 import { T } from "@/lib/theme";
+import { EVIDENCE_URL, useEvidence } from "@/lib/evidence";
+import Link from "next/link";
 
 const LINKS = [
   { name: "API docs", note: "OpenAPI, FastAPI", href: "http://localhost:8000/api/v1/docs" },
@@ -23,7 +25,7 @@ export default function SystemPage() {
 
   return (
     <div>
-      <PageHeader kicker="System · Wiring and observability" title="What the engine is talking to.">
+      <PageHeader kicker="System · Wiring and observability" title="What the engine is *talking* to.">
         The UI calls the backend at <span className="font-mono" style={{ color: T.cream }}>{apiBaseUrl}</span>. When it
         can&apos;t reach it, auctions run in an in-browser simulation that follows the same rules.
       </PageHeader>
@@ -88,6 +90,8 @@ export default function SystemPage() {
         </Panel>
       </div>
 
+      <EvidenceOpsPanel />
+
       <section className="mt-24">
         <Reveal>
           <div className="label">Observability</div>
@@ -137,6 +141,70 @@ export default function SystemPage() {
           </pre>
         </Reveal>
       </section>
+    </div>
+  );
+}
+
+/** Where the incident investigator lives, whether it answers, and its token. */
+function EvidenceOpsPanel() {
+  const { live, token, setToken } = useEvidence();
+  const [draft, setDraft] = useState<string | null>(null);
+  const value = draft ?? token;
+  const state = live === null ? "Checking" : live ? "Reachable" : "Offline";
+  return (
+    <div className="mt-5">
+      <Panel delay={0.2}>
+        <div className="grid gap-8 lg:grid-cols-[1fr_1.3fr] lg:items-end">
+          <div>
+            <div className="label">EvidenceOps investigator</div>
+            <div className="mt-5 text-[40px] font-medium uppercase leading-none" style={{ color: live ? T.saffron : T.cream }}>
+              {state}
+            </div>
+            <p className="mt-4 text-sm" style={{ color: T.drift }}>
+              Calls <span className="font-mono" style={{ color: T.cream }}>{EVIDENCE_URL}</span>.{" "}
+              {live ? (
+                <>
+                  <Link href="/incidents" className="underline decoration-dashed underline-offset-4 hover:text-[#ffedd7]">
+                    Incidents
+                  </Link>{" "}
+                  is reading real runs.
+                </>
+              ) : (
+                <>
+                  Start it with <span className="font-mono" style={{ color: T.cream }}>python -m evidenceops serve</span>; until
+                  then Incidents shows sample runs.
+                </>
+              )}
+            </p>
+          </div>
+          <form
+            className="flex flex-col gap-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setToken(value.trim());
+              setDraft(null);
+            }}
+          >
+            <span className="text-xs" style={{ color: T.drift }}>
+              API token, only if the server sets <span className="font-mono">EVIDENCEOPS_API_TOKEN</span>. Kept in this browser.
+            </span>
+            <div className="flex gap-2">
+              <input
+                type="password"
+                value={value}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder="no token"
+                autoComplete="off"
+                className="min-w-0 flex-1 rounded-full border bg-transparent px-4 py-2 font-mono text-[12px] outline-none transition-colors focus:border-[#dc5000]"
+                style={{ borderColor: T.cork, color: T.cream }}
+              />
+              <button className="rounded-full px-4 py-2 text-[13px] uppercase transition-transform active:scale-95" style={{ background: T.bark, color: T.cream }}>
+                {draft != null && draft !== token ? "Save" : "Saved"}
+              </button>
+            </div>
+          </form>
+        </div>
+      </Panel>
     </div>
   );
 }

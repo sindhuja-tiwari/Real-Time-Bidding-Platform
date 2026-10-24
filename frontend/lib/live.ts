@@ -22,6 +22,12 @@ export function useLiveAuctions({ autoMs = 0, historySize = 24 } = {}) {
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const busy = useRef(false);
+  // A click that lands while an auction is in flight is queued, not dropped.
+  const queued = useRef(false);
+  // While held (pointer over the controls or the ledger), autoplay waits so
+  // nothing shifts under the cursor between press and release.
+  const held = useRef(false);
+  const runRef = useRef<() => Promise<unknown>>(async () => null);
 
   useEffect(() => {
     if (backendUp === null) return;
@@ -45,7 +51,10 @@ export function useLiveAuctions({ autoMs = 0, historySize = 24 } = {}) {
 
   const run = useCallback(
     async (country = pick(COUNTRIES), device = pick(DEVICES)) => {
-      if (busy.current) return null;
+      if (busy.current) {
+        queued.current = true;
+        return null;
+      }
       busy.current = true;
       setRunning(true);
       setError(null);
@@ -61,16 +70,27 @@ export function useLiveAuctions({ autoMs = 0, historySize = 24 } = {}) {
       } finally {
         busy.current = false;
         setRunning(false);
+        if (queued.current) {
+          queued.current = false;
+          setTimeout(() => void runRef.current(), 0);
+        }
       }
     },
     [runAuction, source],
   );
+  runRef.current = () => run();
 
   useEffect(() => {
     if (!autoMs) return;
-    const t = setInterval(() => void run(), autoMs);
+    const t = setInterval(() => {
+      if (!held.current && !busy.current) void run();
+    }, autoMs);
     return () => clearInterval(t);
   }, [autoMs, run]);
 
-  return { last, history, overview, running, error, run, tick };
+  const hold = useCallback((on: boolean) => {
+    held.current = on;
+  }, []);
+
+  return { last, history, overview, running, error, run, tick, hold };
 }
