@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import Counter from "@/components/reactbits/Counter";
@@ -25,9 +24,8 @@ gsap.registerPlugin(ScrollTrigger);
 
 export default function LivePage() {
   const ready = useReady();
-  const router = useRouter();
   const [auto, setAuto] = useState(true);
-  const { last, history, overview, run, running } = useLiveAuctions({ autoMs: auto ? 3400 : 0, historySize: 8 });
+  const { last, history, overview, run, running, hold } = useLiveAuctions({ autoMs: auto ? 3400 : 0, historySize: 8 });
   const { isDemo } = useData();
   const a = last?.auction;
   const bids = last?.bids ?? [];
@@ -65,7 +63,7 @@ export default function LivePage() {
   // The winner's own response time: the auction as a whole can run past 100 ms while it waits out slow DSPs.
   const winnerMs = bids.find((b) => b.status === "WON")?.response_time_ms;
   const headline = a?.winning_dsp_name
-    ? `Sold to ${a.winning_dsp_name}${winnerMs != null ? ` in ${winnerMs} ms` : ""}`
+    ? `Sold to *${a.winning_dsp_name}*${winnerMs != null ? ` in ${winnerMs} ms` : ""}`
     : a
       ? "No valid bids this round"
       : "Waiting for the first bid";
@@ -126,11 +124,16 @@ export default function LivePage() {
           <p data-in className="text-[24px] leading-[1.26] opacity-0 md:text-[28px]">
             <SwapText key={a?.id ?? "x"} text={bids.length ? narrate(bids, a?.clearing_price) : "Five demand-side platforms are about to bid."} stagger={0.012} />
           </p>
-          <div data-in className="mt-10 flex flex-wrap items-center gap-4 opacity-0">
+          <div
+            data-in
+            className="mt-10 flex flex-wrap items-center gap-4 opacity-0"
+            onPointerEnter={() => hold(true)}
+            onPointerLeave={() => hold(false)}
+          >
             <Magnet padding={60} magnetStrength={2.5}>
               <button
                 onClick={() => run()}
-                disabled={running}
+                aria-busy={running}
                 className="group relative overflow-hidden rounded-[36px] px-7 py-[15px] text-[13px] font-medium uppercase"
                 style={{ background: T.bark, color: T.cream }}
               >
@@ -185,11 +188,11 @@ export default function LivePage() {
             <br />
             ledger
           </h2>
-          <div>
+          <div onPointerEnter={() => hold(true)} onPointerLeave={() => hold(false)}>
             {history.map((h, i) => (
-              <button
+              <Link
                 key={h.id}
-                onClick={() => router.push(`/auctions/${h.id}`)}
+                href={`/auctions/${h.id}`}
                 className="group relative grid w-full grid-cols-[1.4fr_1fr_0.8fr_0.7fr] items-baseline gap-4 border-b border-dashed py-5 text-left text-[13px] uppercase md:text-[14px]"
                 style={{ borderColor: T.cork, animation: `rowIn 900ms cubic-bezier(.2,.8,.2,1) ${i * 60}ms both` }}
               >
@@ -205,10 +208,41 @@ export default function LivePage() {
                 <span className="relative text-right tabular-nums" style={{ color: T.drift }}>
                   {h.duration_ms} ms <span className="inline-block transition-transform duration-500 group-hover:translate-x-1">→</span>
                 </span>
-              </button>
+              </Link>
             ))}
           </div>
         </div>
+      </section>
+
+      {/* INCIDENTS TEASER */}
+      <section data-lava="3" className="relative z-10 px-5 pb-28 md:px-8">
+        <DashRule />
+        <Link href="/incidents" className="group grid gap-10 pt-16 lg:grid-cols-[1fr_2fr] lg:items-end">
+          <div>
+            <div className="text-[12px] font-medium uppercase" style={{ color: T.saffron }}>
+              When it breaks
+            </div>
+            <h2 className="mt-4 text-[41px] font-medium uppercase leading-[0.9]">
+              Every outage
+              <br />
+              has a <span className="accent-serif">cause.</span>
+            </h2>
+          </div>
+          <div className="flex flex-wrap items-end justify-between gap-8">
+            <p className="max-w-md text-[17px] leading-relaxed" style={{ color: "#b5a690" }}>
+              EvidenceOps breaks this engine on purpose: slow DSPs, bad configs, a starved database pool. Then it works out why,
+              cites the logs and metrics it used, and proves a fix in a sandbox before anyone touches production.
+            </p>
+            <span className="flex items-baseline gap-3">
+              <span className="font-serif text-[96px] italic leading-none transition-colors duration-500 group-hover:text-[#dc5000] md:text-[128px]">
+                22/22
+              </span>
+              <span className="max-w-[10ch] text-[12px] font-medium uppercase" style={{ color: T.drift }}>
+                incidents called right →
+              </span>
+            </span>
+          </div>
+        </Link>
       </section>
 
       {/* FOOTER CTA */}

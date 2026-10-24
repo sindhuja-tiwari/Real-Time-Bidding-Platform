@@ -13,6 +13,7 @@ const LINKS = [
   { href: "/auctions", label: "Arena" },
   { href: "/dsps", label: "Field" },
   { href: "/campaigns", label: "Budgets" },
+  { href: "/incidents", label: "Incidents" },
   { href: "/system", label: "System" },
 ];
 
@@ -55,7 +56,7 @@ export function Nav({ ready }: { ready: boolean }) {
     <nav
       ref={ref}
       data-hidden={hidden && !menu}
-      className="fixed inset-x-0 top-0 z-50 flex transition-transform duration-700 ease-[cubic-bezier(.7,0,.2,1)] data-[hidden=true]:-translate-y-full items-center justify-between px-5 py-5 text-[12px] font-medium uppercase md:px-8 md:py-6"
+      className="pointer-events-none fixed inset-x-0 top-0 z-50 flex [&>*]:pointer-events-auto transition-transform duration-700 ease-[cubic-bezier(.7,0,.2,1)] data-[hidden=true]:-translate-y-full items-center justify-between px-5 py-5 text-[12px] font-medium uppercase md:px-8 md:py-6"
       style={{ color: T.cream }}
     >
       <span

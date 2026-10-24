@@ -30,7 +30,12 @@ export function Preloader({
     }
     const q = (sel: string) => root.current?.querySelectorAll(sel) ?? [];
     const words = Array.from(q("[data-word]"));
-    gsap.set(words, { y: 0, yPercent: 105 });
+    const reel = q("[data-reel]")[0];
+    // One column of words rolls up a step at a time behind the mask, like a
+    // departures board: the outgoing and incoming word move as one piece, so
+    // there is never a torn half-word on screen.
+    const step = 100 / words.length;
+    gsap.set(reel, { yPercent: step, opacity: 1 });
     const counter = { v: 0 };
     const tl = gsap.timeline({ onComplete: () => setShow(false) });
 
@@ -48,27 +53,31 @@ export function Preloader({
         0.1,
       );
 
-    // Each word rises in from below its mask, holds, and is shoved up by the next.
-    // Tweens on one word must not overlap, or the later one is overwritten.
     const STEP = 0.62;
-    words.forEach((w, i) => {
-      const at = 0.15 + i * STEP;
-      const last = i === words.length - 1;
-      tl.fromTo(w, { yPercent: 105, skewY: 8 }, { yPercent: 0, skewY: 0, duration: last ? 0.55 : 0.4, ease: "expo.out" }, at);
-      if (!last) tl.to(w, { yPercent: -105, skewY: -6, duration: 0.22, ease: "power3.in" }, at + 0.42);
+    words.forEach((_, i) => {
+      tl.to(reel, { yPercent: -i * step, duration: i === 0 ? 0.7 : 0.5, ease: "expo.inOut" }, 0.15 + i * STEP);
     });
 
     // The last word swells, then the panels peel off: page colour, ember, saffron.
     const end = 0.15 + (words.length - 1) * STEP + 0.75;
     tl.to(words[words.length - 1], { scale: 1.06, duration: 0.5, ease: "power2.out" }, end - 0.3)
+      // Let clicks through as soon as the panels start to lift.
+      .set(root.current, { pointerEvents: "none" }, end)
       .to(q("[data-chrome]"), { opacity: 0, duration: 0.25 }, end)
       .to(q("[data-panel='0']"), { clipPath: "inset(0 0 100% 0)", duration: 0.9, ease: "expo.inOut" }, end)
       .to(q("[data-panel='1']"), { clipPath: "inset(0 0 100% 0)", duration: 0.9, ease: "expo.inOut" }, end + 0.12)
       .to(q("[data-panel='2']"), { clipPath: "inset(0 0 100% 0)", duration: 0.9, ease: "expo.inOut" }, end + 0.24)
       .add(onDone, end + 0.45);
 
+    // Any click or key fast-forwards the intro instead of being swallowed.
+    const skip = () => tl.timeScale(5);
+    window.addEventListener("pointerdown", skip);
+    window.addEventListener("keydown", skip);
+
     return () => {
       tl.kill();
+      window.removeEventListener("pointerdown", skip);
+      window.removeEventListener("keydown", skip);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -88,16 +97,19 @@ export function Preloader({
         </div>
 
         <div className="relative h-[34vw] overflow-hidden md:h-[24vw]">
-          {WORDS.map((w, i) => (
-            <span
-              key={w}
-              data-word
-              className="absolute inset-x-0 bottom-0 origin-bottom-left text-[33vw] font-medium uppercase leading-[0.8] tracking-[-0.05em] md:text-[23vw]"
-              style={{ color: i === WORDS.length - 1 ? colors.accent : colors.fg, transform: "translateY(105%)" }}
-            >
-              {w}
-            </span>
-          ))}
+          <div data-reel className="opacity-0 will-change-transform">
+            {WORDS.map((w, i) => (
+              <div key={w} className="flex h-[34vw] items-end md:h-[24vw]">
+                <span
+                  data-word
+                  className="block origin-bottom-left text-[33vw] font-medium uppercase leading-[0.8] tracking-[-0.05em] md:text-[23vw]"
+                  style={{ color: i === WORDS.length - 1 ? colors.accent : colors.fg }}
+                >
+                  {w}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="flex items-end justify-between text-[12px] font-medium uppercase">

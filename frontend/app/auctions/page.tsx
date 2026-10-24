@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import GlideSelect from "@/components/reactbits/GlideSelect";
 import RubberSegment from "@/components/reactbits/RubberSegment";
-import HoldButton from "@/components/reactbits/HoldButton";
+import { PressButton } from "@/components/ui/PressButton";
 import StarBorder from "@/components/reactbits/StarBorder";
 import TearTicket from "@/components/reactbits/TearTicket";
 import DecryptedText from "@/components/reactbits/DecryptedText";
@@ -50,8 +50,17 @@ export default function ArenaPage() {
     return auction;
   }
 
+  // Clicks during a run are queued rather than ignored.
+  const queued = useRef(0);
+  const active = useRef(false);
+
   async function run(times = 1) {
-    if (running) return;
+    if (active.current) {
+      queued.current += times;
+      setRunning(true);
+      return;
+    }
+    active.current = true;
     setRunning(true);
     setError(null);
     try {
@@ -62,8 +71,12 @@ export default function ArenaPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setRunning(false);
+      active.current = false;
       setBurst(null);
+      const more = queued.current;
+      queued.current = 0;
+      if (more) void run(more);
+      else setRunning(false);
     }
   }
 
@@ -72,7 +85,7 @@ export default function ArenaPage() {
 
   return (
     <div>
-      <PageHeader kicker="Arena · Run it yourself" title="Run an auction. Watch the bids land.">
+      <PageHeader kicker="Arena · Run it yourself" title="Run an auction. Watch the bids *land.*">
         Each run sends one ad request through {isDemo ? "the in-browser simulation" : "the live backend"}. Every DSP gets the
         same 100 ms; anything slower is dropped, and the winner pays the runner-up&apos;s price plus one cent.
       </PageHeader>
@@ -115,23 +128,12 @@ export default function ArenaPage() {
             </div>
 
             <div className="space-y-3 pt-2">
-              <HoldButton
-                holdTime={600}
-                resetAfter={700}
-                backgroundColor="#382416"
-                fillColor="#dc5000"
-                textColor="#ffedd7"
-                doneLabel="Auction sent"
-                disabled={running}
-                onHold={() => run(1)}
-                className="w-full"
-              >
-                Hold to run auction
-              </HoldButton>
+              <PressButton onClick={() => run(1)} busy={running && !burst} className="w-full">
+                {running && !burst ? (queued.current ? "Queued, one more…" : "Auctioning…") : "Run auction"}
+              </PressButton>
               <StarBorder
                 as="button"
                 onClick={() => run(10)}
-                disabled={running}
                 color="#ffb829"
                 radius={14}
                 hover="brighten"
@@ -205,6 +207,9 @@ export default function ArenaPage() {
               <span className="mt-1 font-mono text-[11px] text-zinc-300">{a.request_id}</span>
             </div>
           </TearTicket>
+          <Link href={`/auctions/${a.id}`} className="text-[12px] uppercase underline decoration-dashed underline-offset-4" style={{ color: "#8a7b6b" }}>
+            or just open it →
+          </Link>
         </div>
       )}
 

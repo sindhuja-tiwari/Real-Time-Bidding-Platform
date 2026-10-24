@@ -47,7 +47,7 @@ export default function DSPsPage() {
 
   return (
     <div>
-      <PageHeader kicker="Field · Demand-side platforms" title="Who bids, how fast, and who wins.">
+      <PageHeader kicker="Field · Demand-side platforms" title="Who bids, how fast, and who *wins.*">
         Figures cover the last {SAMPLE} auctions. DSP-C bids the most but is configured at 150 ms, so it usually misses the
         100 ms deadline: low latency beats a high bid.
       </PageHeader>

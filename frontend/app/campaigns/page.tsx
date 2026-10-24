@@ -9,7 +9,7 @@ export default function CampaignsPage() {
 
   return (
     <div>
-      <PageHeader kicker="Budgets · Campaign spend" title="Budgets, drawn down one impression at a time.">
+      <PageHeader kicker="Budgets · Campaign spend" title="Budgets, drawn down one impression at a *time.*">
         Each win atomically reserves the clearing price from the winning campaign. A campaign that can&apos;t cover its bid
         is skipped with a budget-exceeded status.
       </PageHeader>

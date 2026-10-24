@@ -97,7 +97,24 @@ System page.
 | `/auctions/[id]` | Every DSP's response for one auction |
 | `/dsps` Field | Win rate, timeouts and response times per DSP |
 | `/campaigns` Budgets | Remaining budget per campaign |
-| `/system` System | Backend health, data source, ad slot, observability links |
+| `/incidents` Incidents | EvidenceOps case files, the 22-scenario scoreboard, and recording a new incident |
+| `/incidents/[runId]` | One incident: the alert, each investigator's cited report, a fix to approve and test in the sandbox, and the answer key |
+| `/system` System | Backend health, data source, ad slot, EvidenceOps status and token, observability links |
+
+#### Incidents (EvidenceOps)
+
+The Incidents pages talk to the EvidenceOps API when it is running and fall back to
+sample case files otherwise:
+
+```bash
+python -m evidenceops serve          # from the repo root; http://127.0.0.1:8100, allows http://localhost:3000
+```
+
+Point the UI elsewhere with `NEXT_PUBLIC_EVIDENCEOPS_URL`. If the server sets
+`EVIDENCEOPS_API_TOKEN`, paste the same token on the System page. In demo mode the
+scenario catalogue and the scoreboard are the real ones from `evidenceops/README.md`;
+the five case files are illustrative runs built from each scenario's ground truth, and
+recording a new incident is disabled.
 
 Motion respects `prefers-reduced-motion`. UI components come from
 [React Bits](https://reactbits.dev); animation uses GSAP, Lenis and Motion.

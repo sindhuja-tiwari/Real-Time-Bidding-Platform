@@ -1,0 +1,3027 @@
+{
+ "_note": "Demo data. The scenario catalogue and the suite results are real (evidenceops/scenarios and the measured-results table in evidenceops/README.md). The five sample runs are illustrative: written from each scenario's ground truth so the UI can be shown without Docker.",
+ "scenarios": [
+  {
+   "id": "s01-slow-external-bidders",
+   "title": "External bidders slow down right after an unrelated deploy",
+   "report": "Auction success rate dropped sharply shortly after the auction backend was deployed this afternoon. Identify the likely cause, show the supporting evidence, and test a remediation without touching the live system.",
+   "alert": "auction_success_rate",
+   "ambiguous": false
+  },
+  {
+   "id": "s02-global-timeout-misconfigured",
+   "title": "A deploy shortens the auction deadline to 15ms",
+   "report": "Auction success rate dropped sharply shortly after the auction backend was deployed this afternoon. Identify the likely cause, show the supporting evidence, and test a remediation without touching the live system.",
+   "alert": "auction_success_rate",
+   "ambiguous": false
+  },
+  {
+   "id": "s03-db-pool-exhaustion",
+   "title": "A deploy shrinks the database connection pool below peak demand",
+   "report": "Auction success rate dropped sharply shortly after the auction backend was deployed this afternoon. Identify the likely cause, show the supporting evidence, and test a remediation without touching the live system.",
+   "alert": "auction_success_rate",
+   "ambiguous": false
+  },
+  {
+   "id": "s04-ambiguous-deadline-and-slow-bidders",
+   "title": "A shorter deadline ships just as the bidders slow down",
+   "report": "Auction success rate dropped sharply shortly after the auction backend was deployed this afternoon. Identify the likely cause, show the supporting evidence, and test a remediation without touching the live system.",
+   "alert": "auction_success_rate",
+   "ambiguous": true
+  },
+  {
+   "id": "s05-missing-index-after-migration",
+   "title": "A schema migration drops the index behind the idempotency lookup",
+   "report": "Auction success rate dropped sharply shortly after the auction backend was deployed this afternoon. Identify the likely cause, show the supporting evidence, and test a remediation without touching the live system.",
+   "alert": "auction_success_rate",
+   "ambiguous": false
+  },
+  {
+   "id": "s06-bidders-slow-after-cache-deploy",
+   "title": "The healthy bidders slow past their timeout just after a cache-tuning deploy",
+   "report": "Auction success rate dropped sharply shortly after the auction backend was deployed this afternoon. Identify the likely cause, show the supporting evidence, and test a remediation without touching the live system.",
+   "alert": "auction_success_rate",
+   "ambiguous": false
+  },
+  {
+   "id": "s07-bidders-degrade-in-stages",
+   "title": "Every bidder degrades in two stages with no deploy at all",
+   "report": "Auction success rate dropped sharply shortly after the auction backend was deployed this afternoon. Identify the likely cause, show the supporting evidence, and test a remediation without touching the live system.",
+   "alert": "auction_success_rate",
+   "ambiguous": false
+  },
+  {
+   "id": "s08-poison-message-crash-loop",
+   "title": "A malformed event crash-loops the worker and analytics stops updating",
+   "report": "The analytics dashboard stopped moving: auction counts per minute are flat even though publishers say traffic is normal. Identify the likely cause, show the supporting evidence, and test a remediation without touching the live system.",
+   "alert": "analytics_backlog",
+   "ambiguous": false
+  },
+  {
+   "id": "s09-publisher-rate-limit-lowered",
+   "title": "A deploy lowers the per-publisher rate limit and turns traffic away",
+   "report": "Auction success rate dropped sharply shortly after the auction backend was deployed this afternoon. Identify the likely cause, show the supporting evidence, and test a remediation without touching the live system.",
+   "alert": "auction_success_rate",
+   "ambiguous": false
+  },
+  {
+   "id": "s10-deadline-cut-with-pool-increase",
+   "title": "A deploy shortens the auction deadline and also grows the DB pool",
+   "report": "Auction success rate dropped sharply shortly after the auction backend was deployed this afternoon. Identify the likely cause, show the supporting evidence, and test a remediation without touching the live system.",
+   "alert": "auction_success_rate",
+   "ambiguous": false
+  },
+  {
+   "id": "s11-second-of-two-deploys-cuts-deadline",
+   "title": "Two deploys land close together and only the second one is bad",
+   "report": "Auction success rate dropped sharply shortly after the auction backend was deployed this afternoon. Identify the likely cause, show the supporting evidence, and test a remediation without touching the live system.",
+   "alert": "auction_success_rate",
+   "ambiguous": false
+  },
+  {
+   "id": "s12-pool-too-small-for-peak",
+   "title": "A modest pool cut is fine at low traffic but not at today's rate",
+   "report": "Auction success rate dropped sharply shortly after the auction backend was deployed this afternoon. Identify the likely cause, show the supporting evidence, and test a remediation without touching the live system.",
+   "alert": "auction_success_rate",
+   "ambiguous": false
+  },
+  {
+   "id": "s13-small-pool-fails-fast",
+   "title": "A small pool with a 1s checkout timeout fails auctions outright",
+   "report": "Auction success rate dropped sharply shortly after the auction backend was deployed this afternoon. Identify the likely cause, show the supporting evidence, and test a remediation without touching the live system.",
+   "alert": "auction_success_rate",
+   "ambiguous": false
+  },
+  {
+   "id": "s14-pool-cut-bundled-with-deadline-raise",
+   "title": "A deploy shrinks the pool and also raises the auction deadline",
+   "report": "Auction success rate dropped sharply shortly after the auction backend was deployed this afternoon. Identify the likely cause, show the supporting evidence, and test a remediation without touching the live system.",
+   "alert": "auction_success_rate",
+   "ambiguous": false
+  },
+  {
+   "id": "s15-missing-index-among-three-migrations",
+   "title": "A release ships three migrations and one of them loses an index",
+   "report": "Auction success rate dropped sharply shortly after the auction backend was deployed this afternoon. Identify the likely cause, show the supporting evidence, and test a remediation without touching the live system.",
+   "alert": "auction_success_rate",
+   "ambiguous": false
+  },
+  {
+   "id": "s16-missing-index-with-pool-resize",
+   "title": "A migration loses an index in the same deploy that resizes the pool",
+   "report": "Auction success rate dropped sharply shortly after the auction backend was deployed this afternoon. Identify the likely cause, show the supporting evidence, and test a remediation without touching the live system.",
+   "alert": "auction_success_rate",
+   "ambiguous": false
+  },
+  {
+   "id": "s17-legacy-events-retry-storm",
+   "title": "A burst of old-format events stalls the worker in retries",
+   "report": "The analytics dashboard stopped moving: auction counts per minute are flat even though publishers say traffic is normal. Identify the likely cause, show the supporting evidence, and test a remediation without touching the live system.",
+   "alert": "analytics_backlog",
+   "ambiguous": false
+  },
+  {
+   "id": "s18-poison-message-after-worker-deploy",
+   "title": "A malformed event arrives just after a deploy restarts the worker",
+   "report": "The analytics dashboard stopped moving: auction counts per minute are flat even though publishers say traffic is normal. Identify the likely cause, show the supporting evidence, and test a remediation without touching the live system.",
+   "alert": "analytics_backlog",
+   "ambiguous": false
+  },
+  {
+   "id": "s19-replay-double-counts-analytics",
+   "title": "An operator replays the analytics consumer and the rollup double-counts",
+   "report": "The analytics dashboard shows more auctions than the platform ran: the per-minute counts no longer match the auction table. Identify the likely cause, show the supporting evidence, and test a remediation without touching the live system.",
+   "alert": "analytics_overcount",
+   "ambiguous": false
+  },
+  {
+   "id": "s20-replay-after-worker-retry-change",
+   "title": "A worker deploy is followed by a consumer replay that double-counts",
+   "report": "The analytics dashboard shows more auctions than the platform ran: the per-minute counts no longer match the auction table. Identify the likely cause, show the supporting evidence, and test a remediation without touching the live system.",
+   "alert": "analytics_overcount",
+   "ambiguous": false
+  },
+  {
+   "id": "s21-ambiguous-deadline-60-and-bidders-70",
+   "title": "The deadline drops to 60ms while bidders slow to about 70ms",
+   "report": "Auction success rate dropped sharply shortly after the auction backend was deployed this afternoon. Identify the likely cause, show the supporting evidence, and test a remediation without touching the live system.",
+   "alert": "auction_success_rate",
+   "ambiguous": true
+  },
+  {
+   "id": "s22-slow-bidders-after-pool-resize",
+   "title": "Bidders slow down right after a deploy resized the DB pool",
+   "report": "Auction success rate dropped sharply shortly after the auction backend was deployed this afternoon. Identify the likely cause, show the supporting evidence, and test a remediation without touching the live system.",
+   "alert": "auction_success_rate",
+   "ambiguous": false
+  }
+ ],
+ "results": [
+  {
+   "scenario_id": "s01-slow-external-bidders",
+   "title": "External bidders slow down right after an unrelated deploy",
+   "alert": "success rate",
+   "truth": "external_dsp_latency",
+   "measured": "100.0% \u2192 0.3%",
+   "before": 100.0,
+   "after": 0.3,
+   "unit": "%",
+   "fixed_workflow": {
+    "answer": "external_dsp_latency",
+    "abstained": false,
+    "correct": true
+   },
+   "agent_offline": {
+    "answer": "external_dsp_latency",
+    "abstained": false,
+    "correct": true
+   }
+  },
+  {
+   "scenario_id": "s02-global-timeout-misconfigured",
+   "title": "A deploy shortens the auction deadline to 15ms",
+   "alert": "success rate",
+   "truth": "config_regression",
+   "measured": "99.9% \u2192 3.5%",
+   "before": 99.9,
+   "after": 3.5,
+   "unit": "%",
+   "fixed_workflow": {
+    "answer": "config_regression",
+    "abstained": false,
+    "correct": true
+   },
+   "agent_offline": {
+    "answer": "config_regression",
+    "abstained": false,
+    "correct": true
+   }
+  },
+  {
+   "scenario_id": "s03-db-pool-exhaustion",
+   "title": "A deploy shrinks the database connection pool below peak demand",
+   "alert": "success rate",
+   "truth": "db_pool_exhaustion",
+   "measured": "100.0% \u2192 0.0%",
+   "before": 100.0,
+   "after": 0.0,
+   "unit": "%",
+   "fixed_workflow": {
+    "answer": "db_pool_exhaustion",
+    "abstained": false,
+    "correct": true
+   },
+   "agent_offline": {
+    "answer": "db_pool_exhaustion",
+    "abstained": false,
+    "correct": true
+   }
+  },
+  {
+   "scenario_id": "s04-ambiguous-deadline-and-slow-bidders",
+   "title": "A shorter deadline ships just as the bidders slow down",
+   "alert": "success rate",
+   "truth": "ambiguous: config_regression / external_dsp_latency",
+   "measured": "100.0% \u2192 0.0%",
+   "before": 100.0,
+   "after": 0.0,
+   "unit": "%",
+   "fixed_workflow": {
+    "answer": null,
+    "abstained": true,
+    "correct": true
+   },
+   "agent_offline": {
+    "answer": null,
+    "abstained": true,
+    "correct": true
+   }
+  },
+  {
+   "scenario_id": "s05-missing-index-after-migration",
+   "title": "A schema migration drops the index behind the idempotency lookup",
+   "alert": "success rate",
+   "truth": "missing_index",
+   "measured": "99.9% \u2192 0.0%",
+   "before": 99.9,
+   "after": 0.0,
+   "unit": "%",
+   "fixed_workflow": {
+    "answer": "db_pool_exhaustion",
+    "abstained": false,
+    "correct": false
+   },
+   "agent_offline": {
+    "answer": "missing_index",
+    "abstained": false,
+    "correct": true
+   }
+  },
+  {
+   "scenario_id": "s06-bidders-slow-after-cache-deploy",
+   "title": "The healthy bidders slow past their timeout just after a cache-tuning deploy",
+   "alert": "success rate",
+   "truth": "external_dsp_latency",
+   "measured": "99.5% \u2192 0.0%",
+   "before": 99.5,
+   "after": 0.0,
+   "unit": "%",
+   "fixed_workflow": {
+    "answer": "external_dsp_latency",
+    "abstained": false,
+    "correct": true
+   },
+   "agent_offline": {
+    "answer": "external_dsp_latency",
+    "abstained": false,
+    "correct": true
+   }
+  },
+  {
+   "scenario_id": "s07-bidders-degrade-in-stages",
+   "title": "Every bidder degrades in two stages with no deploy at all",
+   "alert": "success rate",
+   "truth": "external_dsp_latency",
+   "measured": "99.5% \u2192 0.0%",
+   "before": 99.5,
+   "after": 0.0,
+   "unit": "%",
+   "fixed_workflow": {
+    "answer": "external_dsp_latency",
+    "abstained": false,
+    "correct": true
+   },
+   "agent_offline": {
+    "answer": "external_dsp_latency",
+    "abstained": false,
+    "correct": true
+   }
+  },
+  {
+   "scenario_id": "s08-poison-message-crash-loop",
+   "title": "A malformed event crash-loops the worker and analytics stops updating",
+   "alert": "analytics behind",
+   "truth": "poison_message",
+   "measured": "drift 1 \u2192 1096",
+   "before": 1.0,
+   "after": 1096.0,
+   "unit": "drift",
+   "fixed_workflow": {
+    "answer": "poison_message",
+    "abstained": false,
+    "correct": true
+   },
+   "agent_offline": {
+    "answer": "poison_message",
+    "abstained": false,
+    "correct": true
+   }
+  },
+  {
+   "scenario_id": "s09-publisher-rate-limit-lowered",
+   "title": "A deploy lowers the per-publisher rate limit and turns traffic away",
+   "alert": "success rate",
+   "truth": "config_regression",
+   "measured": "99.5% \u2192 0.0%",
+   "before": 99.5,
+   "after": 0.0,
+   "unit": "%",
+   "fixed_workflow": {
+    "answer": null,
+    "abstained": true,
+    "correct": false
+   },
+   "agent_offline": {
+    "answer": "config_regression",
+    "abstained": false,
+    "correct": true
+   }
+  },
+  {
+   "scenario_id": "s10-deadline-cut-with-pool-increase",
+   "title": "A deploy shortens the auction deadline and also grows the DB pool",
+   "alert": "success rate",
+   "truth": "config_regression",
+   "measured": "99.6% \u2192 47.7%",
+   "before": 99.6,
+   "after": 47.7,
+   "unit": "%",
+   "fixed_workflow": {
+    "answer": "config_regression",
+    "abstained": false,
+    "correct": true
+   },
+   "agent_offline": {
+    "answer": "config_regression",
+    "abstained": false,
+    "correct": true
+   }
+  },
+  {
+   "scenario_id": "s11-second-of-two-deploys-cuts-deadline",
+   "title": "Two deploys land close together and only the second one is bad",
+   "alert": "success rate",
+   "truth": "config_regression",
+   "measured": "99.9% \u2192 20.8%",
+   "before": 99.9,
+   "after": 20.8,
+   "unit": "%",
+   "fixed_workflow": {
+    "answer": "config_regression",
+    "abstained": false,
+    "correct": true
+   },
+   "agent_offline": {
+    "answer": "config_regression",
+    "abstained": false,
+    "correct": true
+   }
+  },
+  {
+   "scenario_id": "s12-pool-too-small-for-peak",
+   "title": "A modest pool cut is fine at low traffic but not at today's rate",
+   "alert": "success rate",
+   "truth": "db_pool_exhaustion",
+   "measured": "98.3% \u2192 0.2%",
+   "before": 98.3,
+   "after": 0.2,
+   "unit": "%",
+   "fixed_workflow": {
+    "answer": "db_pool_exhaustion",
+    "abstained": false,
+    "correct": true
+   },
+   "agent_offline": {
+    "answer": "db_pool_exhaustion",
+    "abstained": false,
+    "correct": true
+   }
+  },
+  {
+   "scenario_id": "s13-small-pool-fails-fast",
+   "title": "A small pool with a 1s checkout timeout fails auctions outright",
+   "alert": "success rate",
+   "truth": "db_pool_exhaustion",
+   "measured": "99.6% \u2192 30.6%",
+   "before": 99.6,
+   "after": 30.6,
+   "unit": "%",
+   "fixed_workflow": {
+    "answer": "db_pool_exhaustion",
+    "abstained": false,
+    "correct": true
+   },
+   "agent_offline": {
+    "answer": "db_pool_exhaustion",
+    "abstained": false,
+    "correct": true
+   }
+  },
+  {
+   "scenario_id": "s14-pool-cut-bundled-with-deadline-raise",
+   "title": "A deploy shrinks the pool and also raises the auction deadline",
+   "alert": "success rate",
+   "truth": "db_pool_exhaustion",
+   "measured": "100.0% \u2192 0.0%",
+   "before": 100.0,
+   "after": 0.0,
+   "unit": "%",
+   "fixed_workflow": {
+    "answer": "db_pool_exhaustion",
+    "abstained": false,
+    "correct": true
+   },
+   "agent_offline": {
+    "answer": "db_pool_exhaustion",
+    "abstained": false,
+    "correct": true
+   }
+  },
+  {
+   "scenario_id": "s15-missing-index-among-three-migrations",
+   "title": "A release ships three migrations and one of them loses an index",
+   "alert": "success rate",
+   "truth": "missing_index",
+   "measured": "99.7% \u2192 0.0%",
+   "before": 99.7,
+   "after": 0.0,
+   "unit": "%",
+   "fixed_workflow": {
+    "answer": "db_pool_exhaustion",
+    "abstained": false,
+    "correct": false
+   },
+   "agent_offline": {
+    "answer": "missing_index",
+    "abstained": false,
+    "correct": true
+   }
+  },
+  {
+   "scenario_id": "s16-missing-index-with-pool-resize",
+   "title": "A migration loses an index in the same deploy that resizes the pool",
+   "alert": "success rate",
+   "truth": "missing_index",
+   "measured": "100.0% \u2192 0.0%",
+   "before": 100.0,
+   "after": 0.0,
+   "unit": "%",
+   "fixed_workflow": {
+    "answer": "db_pool_exhaustion",
+    "abstained": false,
+    "correct": false
+   },
+   "agent_offline": {
+    "answer": "missing_index",
+    "abstained": false,
+    "correct": true
+   }
+  },
+  {
+   "scenario_id": "s17-legacy-events-retry-storm",
+   "title": "A burst of old-format events stalls the worker in retries",
+   "alert": "analytics behind",
+   "truth": "poison_message",
+   "measured": "drift 0 \u2192 1113",
+   "before": 0.0,
+   "after": 1113.0,
+   "unit": "drift",
+   "fixed_workflow": {
+    "answer": "poison_message",
+    "abstained": false,
+    "correct": true
+   },
+   "agent_offline": {
+    "answer": "poison_message",
+    "abstained": false,
+    "correct": true
+   }
+  },
+  {
+   "scenario_id": "s18-poison-message-after-worker-deploy",
+   "title": "A malformed event arrives just after a deploy restarts the worker",
+   "alert": "analytics behind",
+   "truth": "poison_message",
+   "measured": "drift 1 \u2192 899",
+   "before": 1.0,
+   "after": 899.0,
+   "unit": "drift",
+   "fixed_workflow": {
+    "answer": "poison_message",
+    "abstained": false,
+    "correct": true
+   },
+   "agent_offline": {
+    "answer": "poison_message",
+    "abstained": false,
+    "correct": true
+   }
+  },
+  {
+   "scenario_id": "s19-replay-double-counts-analytics",
+   "title": "An operator replays the analytics consumer and the rollup double-counts",
+   "alert": "analytics overcount",
+   "truth": "duplicate_delivery_idempotency",
+   "measured": "drift 0 \u2192 1002",
+   "before": 0.0,
+   "after": 1002.0,
+   "unit": "drift",
+   "fixed_workflow": {
+    "answer": null,
+    "abstained": true,
+    "correct": false
+   },
+   "agent_offline": {
+    "answer": "duplicate_delivery_idempotency",
+    "abstained": false,
+    "correct": true
+   }
+  },
+  {
+   "scenario_id": "s20-replay-after-worker-retry-change",
+   "title": "A worker deploy is followed by a consumer replay that double-counts",
+   "alert": "analytics overcount",
+   "truth": "duplicate_delivery_idempotency",
+   "measured": "drift 0 \u2192 1199",
+   "before": 0.0,
+   "after": 1199.0,
+   "unit": "drift",
+   "fixed_workflow": {
+    "answer": null,
+    "abstained": true,
+    "correct": false
+   },
+   "agent_offline": {
+    "answer": "duplicate_delivery_idempotency",
+    "abstained": false,
+    "correct": true
+   }
+  },
+  {
+   "scenario_id": "s21-ambiguous-deadline-60-and-bidders-70",
+   "title": "The deadline drops to 60ms while bidders slow to about 70ms",
+   "alert": "success rate",
+   "truth": "ambiguous: config_regression / external_dsp_latency",
+   "measured": "99.1% \u2192 17.3%",
+   "before": 99.1,
+   "after": 17.3,
+   "unit": "%",
+   "fixed_workflow": {
+    "answer": null,
+    "abstained": true,
+    "correct": true
+   },
+   "agent_offline": {
+    "answer": null,
+    "abstained": true,
+    "correct": true
+   }
+  },
+  {
+   "scenario_id": "s22-slow-bidders-after-pool-resize",
+   "title": "Bidders slow down right after a deploy resized the DB pool",
+   "alert": "success rate",
+   "truth": "external_dsp_latency",
+   "measured": "99.9% \u2192 0.0%",
+   "before": 99.9,
+   "after": 0.0,
+   "unit": "%",
+   "fixed_workflow": {
+    "answer": "external_dsp_latency",
+    "abstained": false,
+    "correct": true
+   },
+   "agent_offline": {
+    "answer": "external_dsp_latency",
+    "abstained": false,
+    "correct": true
+   }
+  }
+ ],
+ "runs": [
+  {
+   "run_id": "20261020T140200Z-s03-db-pool-exhaustion",
+   "scenario_id": "s03-db-pool-exhaustion",
+   "incident": {
+    "incident_id": "inc-274971dc",
+    "report": "Auction success rate dropped sharply shortly after the auction backend was deployed this afternoon. Identify the likely cause, show the supporting evidence, and test a remediation without touching the live system.",
+    "telemetry_window": [
+     "2026-10-20T14:02:00.000+00:00",
+     "2026-10-20T14:03:40.000+00:00"
+    ],
+    "services": [
+     "backend",
+     "worker",
+     "dsp-simulator",
+     "postgres",
+     "redis",
+     "kafka"
+    ],
+    "alert": {
+     "metric": "auction_success_rate",
+     "definition": "share of publisher auction requests answered 201 with status COMPLETED within 2s",
+     "timeline": [
+      {
+       "window_start": "2026-10-20T14:02:00.000+00:00",
+       "requests": 120,
+       "success_rate": 1,
+       "p50_latency_ms": 64,
+       "p95_latency_ms": 120,
+       "errors": {}
+      },
+      {
+       "window_start": "2026-10-20T14:02:10.000+00:00",
+       "requests": 120,
+       "success_rate": 0.998,
+       "p50_latency_ms": 64,
+       "p95_latency_ms": 123,
+       "errors": {}
+      },
+      {
+       "window_start": "2026-10-20T14:02:20.000+00:00",
+       "requests": 120,
+       "success_rate": 1,
+       "p50_latency_ms": 64,
+       "p95_latency_ms": 126,
+       "errors": {}
+      },
+      {
+       "window_start": "2026-10-20T14:02:30.000+00:00",
+       "requests": 120,
+       "success_rate": 0.998,
+       "p50_latency_ms": 64,
+       "p95_latency_ms": 129,
+       "errors": {}
+      },
+      {
+       "window_start": "2026-10-20T14:02:40.000+00:00",
+       "requests": 120,
+       "success_rate": 0.62,
+       "p50_latency_ms": 1400,
+       "p95_latency_ms": 2000,
+       "errors": {
+        "timeout": 96
+       }
+      },
+      {
+       "window_start": "2026-10-20T14:02:50.000+00:00",
+       "requests": 120,
+       "success_rate": 0,
+       "p50_latency_ms": 1400,
+       "p95_latency_ms": 2000,
+       "errors": {
+        "timeout": 96
+       }
+      },
+      {
+       "window_start": "2026-10-20T14:03:00.000+00:00",
+       "requests": 120,
+       "success_rate": 0.01,
+       "p50_latency_ms": 1400,
+       "p95_latency_ms": 2000,
+       "errors": {
+        "timeout": 96
+       }
+      },
+      {
+       "window_start": "2026-10-20T14:03:10.000+00:00",
+       "requests": 120,
+       "success_rate": 0,
+       "p50_latency_ms": 1400,
+       "p95_latency_ms": 2000,
+       "errors": {
+        "timeout": 96
+       }
+      },
+      {
+       "window_start": "2026-10-20T14:03:20.000+00:00",
+       "requests": 120,
+       "success_rate": 0,
+       "p50_latency_ms": 1400,
+       "p95_latency_ms": 2000,
+       "errors": {
+        "timeout": 96
+       }
+      },
+      {
+       "window_start": "2026-10-20T14:03:30.000+00:00",
+       "requests": 120,
+       "success_rate": 0.01,
+       "p50_latency_ms": 1400,
+       "p95_latency_ms": 2000,
+       "errors": {
+        "timeout": 96
+       }
+      }
+     ]
+    }
+   },
+   "deployments": [
+    {
+     "started_at": "2026-10-20T14:02:40.000+00:00",
+     "finished_at": "2026-10-20T14:02:47.000+00:00",
+     "services": [
+      "backend",
+      "worker"
+     ],
+     "from_version": "1.0.0",
+     "to_version": "1.3.0",
+     "changes": {
+      "DB_POOL_SIZE": {
+       "from": "20",
+       "to": "2"
+      },
+      "DB_MAX_OVERFLOW": {
+       "from": "10",
+       "to": "0"
+      },
+      "EVENT_MAX_RETRIES": {
+       "from": "5",
+       "to": "3"
+      }
+     },
+     "migrations": []
+    }
+   ],
+   "reports": {
+    "fixed_workflow": {
+     "method": "fixed_workflow",
+     "incident_id": "inc-274971dc",
+     "hypotheses": [
+      {
+       "category": "db_pool_exhaustion",
+       "statement": "Deploy 1.3.0 shrank the backend connection pool to 2+0. Auctions queue for a connection and miss the publishers' 2 s timeout while Postgres sits idle.",
+       "confidence": 0.86,
+       "supporting": [
+        "E1",
+        "E2",
+        "E3"
+       ],
+       "refuting": [
+        "E4"
+       ],
+       "component": "backend SQLAlchemy connection pool (DB_POOL_SIZE / DB_MAX_OVERFLOW)"
+      },
+      {
+       "category": "missing_index",
+       "statement": "A schema change made a hot query slow.",
+       "confidence": 0.22,
+       "supporting": [
+        "E4"
+       ],
+       "refuting": [
+        "E1"
+       ],
+       "component": ""
+      },
+      {
+       "category": "config_regression",
+       "statement": "A setting changed in the same deploy caused the drop.",
+       "confidence": 0.14,
+       "supporting": [
+        "E4"
+       ],
+       "refuting": [
+        "E1"
+       ],
+       "component": ""
+      }
+     ],
+     "abstained": false,
+     "abstain_reason": "",
+     "timeline": [
+      {
+       "at": "2026-10-20T14:02:40.000+00:00",
+       "event": "deploy 1.0.0 -> 1.3.0 changes DB_POOL_SIZE, DB_MAX_OVERFLOW, EVENT_MAX_RETRIES",
+       "evidence": [
+        "E4"
+       ]
+      },
+      {
+       "at": "2026-10-20T14:02:45.000+00:00",
+       "event": "success rate drops below half of its baseline",
+       "evidence": [
+        "E1"
+       ]
+      }
+     ],
+     "evidence": {
+      "E1": {
+       "id": "E1",
+       "tool": "auction_outcomes",
+       "args": {
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "publishers hit their 2s timeout and auction duration_ms climbs into seconds, yet DSP bids stay VALID at their usual 25-70ms response times, ruling out slow bidders"
+       }
+      },
+      "E2": {
+       "id": "E2",
+       "tool": "search_logs",
+       "args": {
+        "service": "backend",
+        "pattern": "QueuePool",
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "backend logs show SQLAlchemy QueuePool limit/timeout errors starting right after the deploy"
+       }
+      },
+      "E3": {
+       "id": "E3",
+       "tool": "db_connections",
+       "args": {
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "pg_stat_activity samples fall from ~20 connections to a handful, mostly 'idle in transaction', with no lock waits, so Postgres itself is idle rather than overloaded"
+       }
+      },
+      "E4": {
+       "id": "E4",
+       "tool": "list_deployments",
+       "args": {
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "the deploy's config diff shrinks DB_POOL_SIZE and DB_MAX_OVERFLOW"
+       }
+      }
+     },
+     "tool_calls": 6,
+     "elapsed_seconds": 0.4,
+     "cost_usd": 0.0,
+     "meta": {
+      "sample": true
+     }
+    },
+    "agent_offline": {
+     "method": "agent_offline",
+     "incident_id": "inc-274971dc",
+     "hypotheses": [
+      {
+       "category": "db_pool_exhaustion",
+       "statement": "Deploy 1.3.0 shrank the backend connection pool to 2+0. Auctions queue for a connection and miss the publishers' 2 s timeout while Postgres sits idle.",
+       "confidence": 0.86,
+       "supporting": [
+        "E1",
+        "E2",
+        "E3"
+       ],
+       "refuting": [
+        "E4"
+       ],
+       "component": "backend SQLAlchemy connection pool (DB_POOL_SIZE / DB_MAX_OVERFLOW)"
+      },
+      {
+       "category": "missing_index",
+       "statement": "A schema change made a hot query slow.",
+       "confidence": 0.22,
+       "supporting": [
+        "E4"
+       ],
+       "refuting": [
+        "E1"
+       ],
+       "component": ""
+      },
+      {
+       "category": "config_regression",
+       "statement": "A setting changed in the same deploy caused the drop.",
+       "confidence": 0.14,
+       "supporting": [
+        "E4"
+       ],
+       "refuting": [
+        "E1"
+       ],
+       "component": ""
+      }
+     ],
+     "abstained": false,
+     "abstain_reason": "",
+     "timeline": [
+      {
+       "at": "2026-10-20T14:02:40.000+00:00",
+       "event": "deploy 1.0.0 -> 1.3.0 changes DB_POOL_SIZE, DB_MAX_OVERFLOW, EVENT_MAX_RETRIES",
+       "evidence": [
+        "E4"
+       ]
+      },
+      {
+       "at": "2026-10-20T14:02:45.000+00:00",
+       "event": "success rate drops below half of its baseline",
+       "evidence": [
+        "E1"
+       ]
+      }
+     ],
+     "evidence": {
+      "E1": {
+       "id": "E1",
+       "tool": "auction_outcomes",
+       "args": {
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "publishers hit their 2s timeout and auction duration_ms climbs into seconds, yet DSP bids stay VALID at their usual 25-70ms response times, ruling out slow bidders"
+       }
+      },
+      "E2": {
+       "id": "E2",
+       "tool": "search_logs",
+       "args": {
+        "service": "backend",
+        "pattern": "QueuePool",
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "backend logs show SQLAlchemy QueuePool limit/timeout errors starting right after the deploy"
+       }
+      },
+      "E3": {
+       "id": "E3",
+       "tool": "db_connections",
+       "args": {
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "pg_stat_activity samples fall from ~20 connections to a handful, mostly 'idle in transaction', with no lock waits, so Postgres itself is idle rather than overloaded"
+       }
+      },
+      "E4": {
+       "id": "E4",
+       "tool": "list_deployments",
+       "args": {
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "the deploy's config diff shrinks DB_POOL_SIZE and DB_MAX_OVERFLOW"
+       }
+      }
+     },
+     "tool_calls": 9,
+     "elapsed_seconds": 1.7,
+     "cost_usd": 0.0,
+     "meta": {
+      "sample": true
+     }
+    }
+   },
+   "proposals": {
+    "fixed_workflow": {
+     "run_id": "20261020T140200Z-s03-db-pool-exhaustion",
+     "method": "fixed_workflow",
+     "hypothesis": "db_pool_exhaustion",
+     "changes": [
+      {
+       "kind": "deploy_setting",
+       "setting": "DB_POOL_SIZE",
+       "value": "20"
+      },
+      {
+       "kind": "deploy_setting",
+       "setting": "DB_MAX_OVERFLOW",
+       "value": "10"
+      }
+     ],
+     "rationale": "Restore DB_POOL_SIZE=20 and DB_MAX_OVERFLOW=10 (or size the pool above rps x hold time).",
+     "resolved_changes": [
+      {
+       "kind": "deploy_setting",
+       "setting": "DB_POOL_SIZE",
+       "value": "20"
+      },
+      {
+       "kind": "deploy_setting",
+       "setting": "DB_MAX_OVERFLOW",
+       "value": "10"
+      }
+     ],
+     "status": "awaiting_approval",
+     "created_at": "2026-10-20T14:11:00.000+00:00",
+     "digest": "3e8b448e119f45ebf621da9a490a935d5988f6f7358483031c241854464bc634"
+    },
+    "agent_offline": {
+     "run_id": "20261020T140200Z-s03-db-pool-exhaustion",
+     "method": "agent_offline",
+     "hypothesis": "db_pool_exhaustion",
+     "changes": [
+      {
+       "kind": "deploy_setting",
+       "setting": "DB_POOL_SIZE",
+       "value": "20"
+      },
+      {
+       "kind": "deploy_setting",
+       "setting": "DB_MAX_OVERFLOW",
+       "value": "10"
+      }
+     ],
+     "rationale": "Restore DB_POOL_SIZE=20 and DB_MAX_OVERFLOW=10 (or size the pool above rps x hold time).",
+     "resolved_changes": [
+      {
+       "kind": "deploy_setting",
+       "setting": "DB_POOL_SIZE",
+       "value": "20"
+      },
+      {
+       "kind": "deploy_setting",
+       "setting": "DB_MAX_OVERFLOW",
+       "value": "10"
+      }
+     ],
+     "status": "awaiting_approval",
+     "created_at": "2026-10-20T14:11:00.000+00:00",
+     "digest": "729d55dd1e986fd7679f32735ca57e3ae3c940f575f7131ccc8b4148ab671685"
+    }
+   },
+   "grading": {
+    "ground_truth": {
+     "scenario_id": "s03-db-pool-exhaustion",
+     "ambiguous": false,
+     "category": "db_pool_exhaustion",
+     "component": "backend SQLAlchemy connection pool (DB_POOL_SIZE / DB_MAX_OVERFLOW)",
+     "summary": "Deploy v1.3.0 cut the backend's connection pool from 20+10 to 2+0. Each auction holds a connection for roughly the whole ~100ms DSP fan-out, so the pool now serves about 14 auctions/s against 24/s of traffic. Requests queue for a connection, latency climbs past the publishers' 2s timeout, and success collapses even though Postgres itself is idle.\n",
+     "distinguishing_evidence": [
+      "publishers hit their 2s timeout and auction duration_ms climbs into seconds, yet DSP bids stay VALID at their usual 25-70ms response times, ruling out slow bidders",
+      "backend logs show SQLAlchemy QueuePool limit/timeout errors starting right after the deploy",
+      "pg_stat_activity samples fall from ~20 connections to a handful, mostly 'idle in transaction', with no lock waits, so Postgres itself is idle rather than overloaded",
+      "the deploy's config diff shrinks DB_POOL_SIZE and DB_MAX_OVERFLOW"
+     ],
+     "remediation": {
+      "description": "Restore DB_POOL_SIZE=20 and DB_MAX_OVERFLOW=10 (or size the pool above rps x hold time).",
+      "changes": [
+       {
+        "kind": "deploy_setting",
+        "setting": "DB_POOL_SIZE",
+        "value": "20"
+       },
+       {
+        "kind": "deploy_setting",
+        "setting": "DB_MAX_OVERFLOW",
+        "value": "10"
+       }
+      ],
+      "expected_min_success_rate": 0.9
+     },
+     "candidates": []
+    },
+    "verification": {
+     "baseline": 100.0,
+     "incident": 0.0,
+     "unit": "%",
+     "passed": true
+    },
+    "grades": [
+     {
+      "method": "fixed_workflow",
+      "scenario_id": "s03-db-pool-exhaustion",
+      "truth": "db_pool_exhaustion",
+      "predicted": "db_pool_exhaustion",
+      "top3": [
+       "db_pool_exhaustion",
+       "missing_index",
+       "config_regression"
+      ],
+      "top1_correct": true,
+      "abstained": false,
+      "correct_abstention": null,
+      "supported": true,
+      "tool_calls": 6,
+      "elapsed_seconds": 0.4,
+      "cost_usd": 0.0
+     },
+     {
+      "method": "agent_offline",
+      "scenario_id": "s03-db-pool-exhaustion",
+      "truth": "db_pool_exhaustion",
+      "predicted": "db_pool_exhaustion",
+      "top3": [
+       "db_pool_exhaustion",
+       "missing_index",
+       "config_regression"
+      ],
+      "top1_correct": true,
+      "abstained": false,
+      "correct_abstention": null,
+      "supported": true,
+      "tool_calls": 9,
+      "elapsed_seconds": 1.7,
+      "cost_usd": 0.0
+     }
+    ]
+   }
+  },
+  {
+   "run_id": "20261020T150200Z-s01-slow-external-bidders",
+   "scenario_id": "s01-slow-external-bidders",
+   "incident": {
+    "incident_id": "inc-80908473",
+    "report": "Auction success rate dropped sharply shortly after the auction backend was deployed this afternoon. Identify the likely cause, show the supporting evidence, and test a remediation without touching the live system.",
+    "telemetry_window": [
+     "2026-10-20T14:02:00.000+00:00",
+     "2026-10-20T14:03:40.000+00:00"
+    ],
+    "services": [
+     "backend",
+     "worker",
+     "dsp-simulator",
+     "postgres",
+     "redis",
+     "kafka"
+    ],
+    "alert": {
+     "metric": "auction_success_rate",
+     "definition": "share of publisher auction requests answered 201 with status COMPLETED within 2s",
+     "timeline": [
+      {
+       "window_start": "2026-10-20T14:02:00.000+00:00",
+       "requests": 120,
+       "success_rate": 1,
+       "p50_latency_ms": 64,
+       "p95_latency_ms": 120,
+       "errors": {}
+      },
+      {
+       "window_start": "2026-10-20T14:02:10.000+00:00",
+       "requests": 120,
+       "success_rate": 0.998,
+       "p50_latency_ms": 64,
+       "p95_latency_ms": 123,
+       "errors": {}
+      },
+      {
+       "window_start": "2026-10-20T14:02:20.000+00:00",
+       "requests": 120,
+       "success_rate": 1,
+       "p50_latency_ms": 64,
+       "p95_latency_ms": 126,
+       "errors": {}
+      },
+      {
+       "window_start": "2026-10-20T14:02:30.000+00:00",
+       "requests": 120,
+       "success_rate": 0.998,
+       "p50_latency_ms": 64,
+       "p95_latency_ms": 129,
+       "errors": {}
+      },
+      {
+       "window_start": "2026-10-20T14:02:40.000+00:00",
+       "requests": 120,
+       "success_rate": 0.6215,
+       "p50_latency_ms": 101,
+       "p95_latency_ms": 104,
+       "errors": {
+        "no_bid": 118
+       }
+      },
+      {
+       "window_start": "2026-10-20T14:02:50.000+00:00",
+       "requests": 120,
+       "success_rate": 0.003,
+       "p50_latency_ms": 101,
+       "p95_latency_ms": 104,
+       "errors": {
+        "no_bid": 118
+       }
+      },
+      {
+       "window_start": "2026-10-20T14:03:00.000+00:00",
+       "requests": 120,
+       "success_rate": 0.013,
+       "p50_latency_ms": 101,
+       "p95_latency_ms": 104,
+       "errors": {
+        "no_bid": 118
+       }
+      },
+      {
+       "window_start": "2026-10-20T14:03:10.000+00:00",
+       "requests": 120,
+       "success_rate": 0.003,
+       "p50_latency_ms": 101,
+       "p95_latency_ms": 104,
+       "errors": {
+        "no_bid": 118
+       }
+      },
+      {
+       "window_start": "2026-10-20T14:03:20.000+00:00",
+       "requests": 120,
+       "success_rate": 0.003,
+       "p50_latency_ms": 101,
+       "p95_latency_ms": 104,
+       "errors": {
+        "no_bid": 118
+       }
+      },
+      {
+       "window_start": "2026-10-20T14:03:30.000+00:00",
+       "requests": 120,
+       "success_rate": 0.013,
+       "p50_latency_ms": 101,
+       "p95_latency_ms": 104,
+       "errors": {
+        "no_bid": 118
+       }
+      }
+     ]
+    }
+   },
+   "deployments": [
+    {
+     "started_at": "2026-10-20T14:02:40.000+00:00",
+     "finished_at": "2026-10-20T14:02:47.000+00:00",
+     "services": [
+      "backend",
+      "worker"
+     ],
+     "from_version": "1.0.0",
+     "to_version": "1.1.0",
+     "changes": {
+      "REDIS_CACHE_TTL_SECONDS": {
+       "from": "30",
+       "to": "45"
+      },
+      "RATE_LIMIT_ADMIN_PER_MIN": {
+       "from": "60",
+       "to": "120"
+      }
+     },
+     "migrations": []
+    }
+   ],
+   "reports": {
+    "fixed_workflow": {
+     "method": "fixed_workflow",
+     "incident_id": "inc-80908473",
+     "hypotheses": [
+      {
+       "category": "external_dsp_latency",
+       "statement": "Four bidders slowed past their 100 ms timeout; their bids are discarded and auctions close with no bid. The deploy just before only touched a cache TTL and an admin rate limit.",
+       "confidence": 0.86,
+       "supporting": [
+        "E1",
+        "E2",
+        "E3"
+       ],
+       "refuting": [
+        "E4"
+       ],
+       "component": "external DSPs DSP-A, DSP-B, DSP-D, DSP-E"
+      },
+      {
+       "category": "config_regression",
+       "statement": "A setting changed in the same deploy caused the drop.",
+       "confidence": 0.22,
+       "supporting": [
+        "E4"
+       ],
+       "refuting": [
+        "E1"
+       ],
+       "component": ""
+      },
+      {
+       "category": "db_pool_exhaustion",
+       "statement": "The backend ran out of pooled database connections.",
+       "confidence": 0.14,
+       "supporting": [
+        "E4"
+       ],
+       "refuting": [
+        "E1"
+       ],
+       "component": ""
+      }
+     ],
+     "abstained": false,
+     "abstain_reason": "",
+     "timeline": [
+      {
+       "at": "2026-10-20T14:02:40.000+00:00",
+       "event": "deploy 1.0.0 -> 1.1.0 changes REDIS_CACHE_TTL_SECONDS, RATE_LIMIT_ADMIN_PER_MIN",
+       "evidence": [
+        "E1"
+       ]
+      },
+      {
+       "at": "2026-10-20T14:02:45.000+00:00",
+       "event": "success rate drops below half of its baseline",
+       "evidence": [
+        "E1"
+       ]
+      }
+     ],
+     "evidence": {
+      "E1": {
+       "id": "E1",
+       "tool": "bid_outcomes",
+       "args": {
+        "group_by": "dsp_name",
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "bid rows for DSP-A/B/D/E switch from VALID to TIMEOUT with response_time_ms at the ~100ms per-DSP budget, not at a lower cap"
+       }
+      },
+      "E2": {
+       "id": "E2",
+       "tool": "span_latency",
+       "args": {
+        "name": "dsp.bid",
+        "group_by": "dsp.name",
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "backend logs show dsp_timeout events with budget_ms=100 for those DSPs"
+       }
+      },
+      "E3": {
+       "id": "E3",
+       "tool": "auction_outcomes",
+       "args": {
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "success recovers after the deploy's restart blip and only then collapses; auction server duration stays near the 100ms deadline"
+       }
+      },
+      "E4": {
+       "id": "E4",
+       "tool": "search_logs",
+       "args": {
+        "service": "backend",
+        "pattern": "QueuePool|Traceback",
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "no database pool errors and HTTP status stays 201 (auctions complete as NO_BID rather than failing)"
+       }
+      }
+     },
+     "tool_calls": 6,
+     "elapsed_seconds": 0.4,
+     "cost_usd": 0.0,
+     "meta": {
+      "sample": true
+     }
+    },
+    "agent_offline": {
+     "method": "agent_offline",
+     "incident_id": "inc-80908473",
+     "hypotheses": [
+      {
+       "category": "external_dsp_latency",
+       "statement": "Four bidders slowed past their 100 ms timeout; their bids are discarded and auctions close with no bid. The deploy just before only touched a cache TTL and an admin rate limit.",
+       "confidence": 0.86,
+       "supporting": [
+        "E1",
+        "E2",
+        "E3"
+       ],
+       "refuting": [
+        "E4"
+       ],
+       "component": "external DSPs DSP-A, DSP-B, DSP-D, DSP-E"
+      },
+      {
+       "category": "config_regression",
+       "statement": "A setting changed in the same deploy caused the drop.",
+       "confidence": 0.22,
+       "supporting": [
+        "E4"
+       ],
+       "refuting": [
+        "E1"
+       ],
+       "component": ""
+      },
+      {
+       "category": "db_pool_exhaustion",
+       "statement": "The backend ran out of pooled database connections.",
+       "confidence": 0.14,
+       "supporting": [
+        "E4"
+       ],
+       "refuting": [
+        "E1"
+       ],
+       "component": ""
+      }
+     ],
+     "abstained": false,
+     "abstain_reason": "",
+     "timeline": [
+      {
+       "at": "2026-10-20T14:02:40.000+00:00",
+       "event": "deploy 1.0.0 -> 1.1.0 changes REDIS_CACHE_TTL_SECONDS, RATE_LIMIT_ADMIN_PER_MIN",
+       "evidence": [
+        "E1"
+       ]
+      },
+      {
+       "at": "2026-10-20T14:02:45.000+00:00",
+       "event": "success rate drops below half of its baseline",
+       "evidence": [
+        "E1"
+       ]
+      }
+     ],
+     "evidence": {
+      "E1": {
+       "id": "E1",
+       "tool": "bid_outcomes",
+       "args": {
+        "group_by": "dsp_name",
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "bid rows for DSP-A/B/D/E switch from VALID to TIMEOUT with response_time_ms at the ~100ms per-DSP budget, not at a lower cap"
+       }
+      },
+      "E2": {
+       "id": "E2",
+       "tool": "span_latency",
+       "args": {
+        "name": "dsp.bid",
+        "group_by": "dsp.name",
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "backend logs show dsp_timeout events with budget_ms=100 for those DSPs"
+       }
+      },
+      "E3": {
+       "id": "E3",
+       "tool": "auction_outcomes",
+       "args": {
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "success recovers after the deploy's restart blip and only then collapses; auction server duration stays near the 100ms deadline"
+       }
+      },
+      "E4": {
+       "id": "E4",
+       "tool": "search_logs",
+       "args": {
+        "service": "backend",
+        "pattern": "QueuePool|Traceback",
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "no database pool errors and HTTP status stays 201 (auctions complete as NO_BID rather than failing)"
+       }
+      }
+     },
+     "tool_calls": 9,
+     "elapsed_seconds": 1.7,
+     "cost_usd": 0.0,
+     "meta": {
+      "sample": true
+     }
+    }
+   },
+   "proposals": {
+    "fixed_workflow": {
+     "run_id": "20261020T150200Z-s01-slow-external-bidders",
+     "method": "fixed_workflow",
+     "hypothesis": "external_dsp_latency",
+     "changes": [
+      {
+       "kind": "deploy_setting",
+       "setting": "AUCTION_GLOBAL_TIMEOUT_MS",
+       "value": "180"
+      },
+      {
+       "kind": "dsp_timeout_ms",
+       "dsps": [
+        "DSP-A",
+        "DSP-B",
+        "DSP-D",
+        "DSP-E"
+       ],
+       "value": 180
+      }
+     ],
+     "rationale": "Raise the per-DSP timeout and the global auction deadline to ~180ms (or take the degraded DSPs out of rotation). Raising only the global deadline does not help, because the per-DSP timeout_ms stored on each DSP row still cuts the calls at 100ms.",
+     "resolved_changes": [
+      {
+       "kind": "deploy_setting",
+       "setting": "AUCTION_GLOBAL_TIMEOUT_MS",
+       "value": "180"
+      },
+      {
+       "kind": "dsp_timeout_ms",
+       "dsps": [
+        "DSP-A",
+        "DSP-B",
+        "DSP-D",
+        "DSP-E"
+       ],
+       "value": 180
+      }
+     ],
+     "status": "awaiting_approval",
+     "created_at": "2026-10-20T14:11:00.000+00:00",
+     "digest": "91c5f19084fb40c5898de086af98037a4cf18fb384316c4ba1060f57335fd979"
+    },
+    "agent_offline": {
+     "run_id": "20261020T150200Z-s01-slow-external-bidders",
+     "method": "agent_offline",
+     "hypothesis": "external_dsp_latency",
+     "changes": [
+      {
+       "kind": "deploy_setting",
+       "setting": "AUCTION_GLOBAL_TIMEOUT_MS",
+       "value": "180"
+      },
+      {
+       "kind": "dsp_timeout_ms",
+       "dsps": [
+        "DSP-A",
+        "DSP-B",
+        "DSP-D",
+        "DSP-E"
+       ],
+       "value": 180
+      }
+     ],
+     "rationale": "Raise the per-DSP timeout and the global auction deadline to ~180ms (or take the degraded DSPs out of rotation). Raising only the global deadline does not help, because the per-DSP timeout_ms stored on each DSP row still cuts the calls at 100ms.",
+     "resolved_changes": [
+      {
+       "kind": "deploy_setting",
+       "setting": "AUCTION_GLOBAL_TIMEOUT_MS",
+       "value": "180"
+      },
+      {
+       "kind": "dsp_timeout_ms",
+       "dsps": [
+        "DSP-A",
+        "DSP-B",
+        "DSP-D",
+        "DSP-E"
+       ],
+       "value": 180
+      }
+     ],
+     "status": "awaiting_approval",
+     "created_at": "2026-10-20T14:11:00.000+00:00",
+     "digest": "7882461474dc86d1150d0e229d81551c75cc91dbdbefc11e6e42487b8ee8d7b4"
+    }
+   },
+   "grading": {
+    "ground_truth": {
+     "scenario_id": "s01-slow-external-bidders",
+     "ambiguous": false,
+     "category": "external_dsp_latency",
+     "component": "external DSPs DSP-A, DSP-B, DSP-D, DSP-E",
+     "summary": "Four external bidders started answering in roughly 95-145ms, past the 100ms per-DSP timeout, so most of their bids are discarded as TIMEOUT and many auctions end NO_BID. The v1.1.0 deploy only changed a cache TTL and an admin rate limit and is unrelated; the drop starts about 20s after it began, once the platform had already recovered from the restart.\n",
+     "distinguishing_evidence": [
+      "bid rows for DSP-A/B/D/E switch from VALID to TIMEOUT with response_time_ms at the ~100ms per-DSP budget, not at a lower cap",
+      "backend logs show dsp_timeout events with budget_ms=100 for those DSPs",
+      "success recovers after the deploy's restart blip and only then collapses; auction server duration stays near the 100ms deadline",
+      "no database pool errors and HTTP status stays 201 (auctions complete as NO_BID rather than failing)"
+     ],
+     "remediation": {
+      "description": "Raise the per-DSP timeout and the global auction deadline to ~180ms (or take the degraded DSPs out of rotation). Raising only the global deadline does not help, because the per-DSP timeout_ms stored on each DSP row still cuts the calls at 100ms.\n",
+      "changes": [
+       {
+        "kind": "deploy_setting",
+        "setting": "AUCTION_GLOBAL_TIMEOUT_MS",
+        "value": "180"
+       },
+       {
+        "kind": "dsp_timeout_ms",
+        "dsps": [
+         "DSP-A",
+         "DSP-B",
+         "DSP-D",
+         "DSP-E"
+        ],
+        "value": 180
+       }
+      ],
+      "expected_min_success_rate": 0.9
+     },
+     "candidates": []
+    },
+    "verification": {
+     "baseline": 100.0,
+     "incident": 0.3,
+     "unit": "%",
+     "passed": true
+    },
+    "grades": [
+     {
+      "method": "fixed_workflow",
+      "scenario_id": "s01-slow-external-bidders",
+      "truth": "external_dsp_latency",
+      "predicted": "external_dsp_latency",
+      "top3": [
+       "external_dsp_latency",
+       "config_regression",
+       "db_pool_exhaustion"
+      ],
+      "top1_correct": true,
+      "abstained": false,
+      "correct_abstention": null,
+      "supported": true,
+      "tool_calls": 6,
+      "elapsed_seconds": 0.4,
+      "cost_usd": 0.0
+     },
+     {
+      "method": "agent_offline",
+      "scenario_id": "s01-slow-external-bidders",
+      "truth": "external_dsp_latency",
+      "predicted": "external_dsp_latency",
+      "top3": [
+       "external_dsp_latency",
+       "config_regression",
+       "db_pool_exhaustion"
+      ],
+      "top1_correct": true,
+      "abstained": false,
+      "correct_abstention": null,
+      "supported": true,
+      "tool_calls": 9,
+      "elapsed_seconds": 1.7,
+      "cost_usd": 0.0
+     }
+    ]
+   }
+  },
+  {
+   "run_id": "20261020T160200Z-s05-missing-index-after-migration",
+   "scenario_id": "s05-missing-index-after-migration",
+   "incident": {
+    "incident_id": "inc-3fcd3d51",
+    "report": "Auction success rate dropped sharply shortly after the auction backend was deployed this afternoon. Identify the likely cause, show the supporting evidence, and test a remediation without touching the live system.",
+    "telemetry_window": [
+     "2026-10-20T14:02:00.000+00:00",
+     "2026-10-20T14:03:40.000+00:00"
+    ],
+    "services": [
+     "backend",
+     "worker",
+     "dsp-simulator",
+     "postgres",
+     "redis",
+     "kafka"
+    ],
+    "alert": {
+     "metric": "auction_success_rate",
+     "definition": "share of publisher auction requests answered 201 with status COMPLETED within 2s",
+     "timeline": [
+      {
+       "window_start": "2026-10-20T14:02:00.000+00:00",
+       "requests": 120,
+       "success_rate": 0.999,
+       "p50_latency_ms": 64,
+       "p95_latency_ms": 120,
+       "errors": {}
+      },
+      {
+       "window_start": "2026-10-20T14:02:10.000+00:00",
+       "requests": 120,
+       "success_rate": 0.997,
+       "p50_latency_ms": 64,
+       "p95_latency_ms": 123,
+       "errors": {}
+      },
+      {
+       "window_start": "2026-10-20T14:02:20.000+00:00",
+       "requests": 120,
+       "success_rate": 0.999,
+       "p50_latency_ms": 64,
+       "p95_latency_ms": 126,
+       "errors": {}
+      },
+      {
+       "window_start": "2026-10-20T14:02:30.000+00:00",
+       "requests": 120,
+       "success_rate": 0.997,
+       "p50_latency_ms": 64,
+       "p95_latency_ms": 129,
+       "errors": {}
+      },
+      {
+       "window_start": "2026-10-20T14:02:40.000+00:00",
+       "requests": 120,
+       "success_rate": 0.6195,
+       "p50_latency_ms": 1400,
+       "p95_latency_ms": 2000,
+       "errors": {
+        "timeout": 96
+       }
+      },
+      {
+       "window_start": "2026-10-20T14:02:50.000+00:00",
+       "requests": 120,
+       "success_rate": 0,
+       "p50_latency_ms": 1400,
+       "p95_latency_ms": 2000,
+       "errors": {
+        "timeout": 96
+       }
+      },
+      {
+       "window_start": "2026-10-20T14:03:00.000+00:00",
+       "requests": 120,
+       "success_rate": 0.01,
+       "p50_latency_ms": 1400,
+       "p95_latency_ms": 2000,
+       "errors": {
+        "timeout": 96
+       }
+      },
+      {
+       "window_start": "2026-10-20T14:03:10.000+00:00",
+       "requests": 120,
+       "success_rate": 0,
+       "p50_latency_ms": 1400,
+       "p95_latency_ms": 2000,
+       "errors": {
+        "timeout": 96
+       }
+      },
+      {
+       "window_start": "2026-10-20T14:03:20.000+00:00",
+       "requests": 120,
+       "success_rate": 0,
+       "p50_latency_ms": 1400,
+       "p95_latency_ms": 2000,
+       "errors": {
+        "timeout": 96
+       }
+      },
+      {
+       "window_start": "2026-10-20T14:03:30.000+00:00",
+       "requests": 120,
+       "success_rate": 0.01,
+       "p50_latency_ms": 1400,
+       "p95_latency_ms": 2000,
+       "errors": {
+        "timeout": 96
+       }
+      }
+     ]
+    }
+   },
+   "deployments": [
+    {
+     "started_at": "2026-10-20T14:02:40.000+00:00",
+     "finished_at": "2026-10-20T14:02:47.000+00:00",
+     "services": [
+      "backend",
+      "worker"
+     ],
+     "from_version": "1.0.0",
+     "to_version": "1.5.0",
+     "changes": {
+      "REDIS_CACHE_TTL_SECONDS": {
+       "from": "30",
+       "to": "45"
+      }
+     },
+     "migrations": [
+      "0004_auction_request_id_collation"
+     ]
+    }
+   ],
+   "reports": {
+    "fixed_workflow": {
+     "method": "fixed_workflow",
+     "incident_id": "inc-3fcd3d51",
+     "hypotheses": [
+      {
+       "category": "db_pool_exhaustion",
+       "statement": "The backend ran out of pooled database connections.",
+       "confidence": 0.58,
+       "supporting": [
+        "E1",
+        "E2",
+        "E3"
+       ],
+       "refuting": [
+        "E4"
+       ],
+       "component": ""
+      },
+      {
+       "category": "missing_index",
+       "statement": "A schema change made a hot query slow.",
+       "confidence": 0.22,
+       "supporting": [
+        "E4"
+       ],
+       "refuting": [
+        "E1"
+       ],
+       "component": ""
+      },
+      {
+       "category": "config_regression",
+       "statement": "A setting changed in the same deploy caused the drop.",
+       "confidence": 0.14,
+       "supporting": [
+        "E4"
+       ],
+       "refuting": [
+        "E1"
+       ],
+       "component": ""
+      }
+     ],
+     "abstained": false,
+     "abstain_reason": "",
+     "timeline": [
+      {
+       "at": "2026-10-20T14:02:40.000+00:00",
+       "event": "deploy 1.0.0 -> 1.5.0 changes REDIS_CACHE_TTL_SECONDS and runs 0004_auction_request_id_collation",
+       "evidence": [
+        "E1"
+       ]
+      },
+      {
+       "at": "2026-10-20T14:02:45.000+00:00",
+       "event": "success rate drops below half of its baseline",
+       "evidence": [
+        "E1"
+       ]
+      }
+     ],
+     "evidence": {
+      "E1": {
+       "id": "E1",
+       "tool": "slow_queries",
+       "args": {
+        "top": 8,
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "active queries show the SELECT on auction by request_id running for hundreds of ms"
+       }
+      },
+      "E2": {
+       "id": "E2",
+       "tool": "table_scans",
+       "args": {
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "sequential scans on auction jump from ~0 to one or more per request, with millions of tuples read"
+       }
+      },
+      "E3": {
+       "id": "E3",
+       "tool": "db_indexes",
+       "args": {
+        "table": "auctions",
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "pg_indexes no longer lists auction_request_id_key"
+       }
+      },
+      "E4": {
+       "id": "E4",
+       "tool": "db_connections",
+       "args": {
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "DSP response times are unchanged, ruling out slow bidders"
+       }
+      }
+     },
+     "tool_calls": 6,
+     "elapsed_seconds": 0.4,
+     "cost_usd": 0.0,
+     "meta": {
+      "sample": true
+     }
+    },
+    "agent_offline": {
+     "method": "agent_offline",
+     "incident_id": "inc-3fcd3d51",
+     "hypotheses": [
+      {
+       "category": "missing_index",
+       "statement": "Migration 0004 dropped the unique index on auction.request_id, so every idempotency lookup scans a 2M-row table and holds a connection for seconds.",
+       "confidence": 0.86,
+       "supporting": [
+        "E1",
+        "E2",
+        "E3"
+       ],
+       "refuting": [
+        "E4"
+       ],
+       "component": "auction.request_id index (dropped by migration 0004_auction_request_id_collation)"
+      },
+      {
+       "category": "db_pool_exhaustion",
+       "statement": "The backend ran out of pooled database connections.",
+       "confidence": 0.22,
+       "supporting": [
+        "E4"
+       ],
+       "refuting": [
+        "E1"
+       ],
+       "component": ""
+      },
+      {
+       "category": "config_regression",
+       "statement": "A setting changed in the same deploy caused the drop.",
+       "confidence": 0.14,
+       "supporting": [
+        "E4"
+       ],
+       "refuting": [
+        "E1"
+       ],
+       "component": ""
+      }
+     ],
+     "abstained": false,
+     "abstain_reason": "",
+     "timeline": [
+      {
+       "at": "2026-10-20T14:02:40.000+00:00",
+       "event": "deploy 1.0.0 -> 1.5.0 changes REDIS_CACHE_TTL_SECONDS and runs 0004_auction_request_id_collation",
+       "evidence": [
+        "E1"
+       ]
+      },
+      {
+       "at": "2026-10-20T14:02:45.000+00:00",
+       "event": "success rate drops below half of its baseline",
+       "evidence": [
+        "E1"
+       ]
+      }
+     ],
+     "evidence": {
+      "E1": {
+       "id": "E1",
+       "tool": "slow_queries",
+       "args": {
+        "top": 8,
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "active queries show the SELECT on auction by request_id running for hundreds of ms"
+       }
+      },
+      "E2": {
+       "id": "E2",
+       "tool": "table_scans",
+       "args": {
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "sequential scans on auction jump from ~0 to one or more per request, with millions of tuples read"
+       }
+      },
+      "E3": {
+       "id": "E3",
+       "tool": "db_indexes",
+       "args": {
+        "table": "auctions",
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "pg_indexes no longer lists auction_request_id_key"
+       }
+      },
+      "E4": {
+       "id": "E4",
+       "tool": "db_connections",
+       "args": {
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "DSP response times are unchanged, ruling out slow bidders"
+       }
+      }
+     },
+     "tool_calls": 9,
+     "elapsed_seconds": 1.7,
+     "cost_usd": 0.0,
+     "meta": {
+      "sample": true
+     }
+    }
+   },
+   "proposals": {
+    "fixed_workflow": {
+     "run_id": "20261020T160200Z-s05-missing-index-after-migration",
+     "method": "fixed_workflow",
+     "hypothesis": "db_pool_exhaustion",
+     "changes": [
+      {
+       "kind": "rollback_setting",
+       "setting": "DB_POOL_SIZE"
+      }
+     ],
+     "rationale": "roll back the db_pool_exhaustion settings changed by the suspect deploy: DB_POOL_SIZE",
+     "resolved_changes": [
+      {
+       "kind": "rollback_setting",
+       "setting": "DB_POOL_SIZE"
+      }
+     ],
+     "status": "awaiting_approval",
+     "created_at": "2026-10-20T14:11:00.000+00:00",
+     "digest": "9346f4508722b47a1906bd96245fa6e542b8ea18cec7d8415ef0dca8e8684e4b"
+    },
+    "agent_offline": {
+     "run_id": "20261020T160200Z-s05-missing-index-after-migration",
+     "method": "agent_offline",
+     "hypothesis": "missing_index",
+     "changes": [
+      {
+       "kind": "rollback_migration",
+       "migration": "0004_auction_request_id_collation"
+      }
+     ],
+     "rationale": "Roll back migration 0004 (re-create the unique index on auction.request_id).",
+     "resolved_changes": [
+      {
+       "kind": "rollback_migration",
+       "migration": "0004_auction_request_id_collation"
+      }
+     ],
+     "status": "awaiting_approval",
+     "created_at": "2026-10-20T14:11:00.000+00:00",
+     "digest": "8e63ab13e1ee2883f0473e591aae33014f4e8d2e965889cee026eccac07dbf0f"
+    }
+   },
+   "grading": {
+    "ground_truth": {
+     "scenario_id": "s05-missing-index-after-migration",
+     "ambiguous": false,
+     "category": "missing_index",
+     "component": "auction.request_id index (dropped by migration 0004_auction_request_id_collation)",
+     "summary": "Release 1.5.0 ran migration 0004, which rebuilt auction.request_id and dropped its UNIQUE constraint, and with it the only index on the column. Every auction starts with an idempotency lookup by request_id, which is now a sequential scan over two million rows. Each request holds a pooled connection for the scan, the pool queues, and requests miss their 2s timeout while DSPs stay fast.\n",
+     "distinguishing_evidence": [
+      "active queries show the SELECT on auction by request_id running for hundreds of ms",
+      "sequential scans on auction jump from ~0 to one or more per request, with millions of tuples read",
+      "pg_indexes no longer lists auction_request_id_key",
+      "DSP response times are unchanged, ruling out slow bidders"
+     ],
+     "remediation": {
+      "description": "Roll back migration 0004 (re-create the unique index on auction.request_id).",
+      "changes": [
+       {
+        "kind": "rollback_migration",
+        "migration": "0004_auction_request_id_collation"
+       }
+      ],
+      "expected_min_success_rate": 0.9
+     },
+     "candidates": []
+    },
+    "verification": {
+     "baseline": 99.9,
+     "incident": 0.0,
+     "unit": "%",
+     "passed": true
+    },
+    "grades": [
+     {
+      "method": "fixed_workflow",
+      "scenario_id": "s05-missing-index-after-migration",
+      "truth": "missing_index",
+      "predicted": "db_pool_exhaustion",
+      "top3": [
+       "db_pool_exhaustion",
+       "missing_index",
+       "config_regression"
+      ],
+      "top1_correct": false,
+      "abstained": false,
+      "correct_abstention": null,
+      "supported": true,
+      "tool_calls": 6,
+      "elapsed_seconds": 0.4,
+      "cost_usd": 0.0
+     },
+     {
+      "method": "agent_offline",
+      "scenario_id": "s05-missing-index-after-migration",
+      "truth": "missing_index",
+      "predicted": "missing_index",
+      "top3": [
+       "missing_index",
+       "db_pool_exhaustion",
+       "config_regression"
+      ],
+      "top1_correct": true,
+      "abstained": false,
+      "correct_abstention": null,
+      "supported": true,
+      "tool_calls": 9,
+      "elapsed_seconds": 1.7,
+      "cost_usd": 0.0
+     }
+    ]
+   }
+  },
+  {
+   "run_id": "20261020T170200Z-s08-poison-message-crash-loop",
+   "scenario_id": "s08-poison-message-crash-loop",
+   "incident": {
+    "incident_id": "inc-af7c7b81",
+    "report": "The analytics dashboard stopped moving: auction counts per minute are flat even though publishers say traffic is normal. Identify the likely cause, show the supporting evidence, and test a remediation without touching the live system.",
+    "telemetry_window": [
+     "2026-10-20T14:02:00.000+00:00",
+     "2026-10-20T14:03:40.000+00:00"
+    ],
+    "services": [
+     "backend",
+     "worker",
+     "dsp-simulator",
+     "postgres",
+     "redis",
+     "kafka"
+    ],
+    "alert": {
+     "metric": "analytics_backlog",
+     "definition": "finished auctions (auction table) minus auctions counted by the analytics rollup (auction_minute_rollup); near 0 when analytics keeps up",
+     "timeline": [
+      {
+       "sampled_at": "2026-10-20T14:02:00.000+00:00",
+       "finished_auctions": 240,
+       "rolled_up": 239,
+       "not_yet_counted": 1
+      },
+      {
+       "sampled_at": "2026-10-20T14:02:10.000+00:00",
+       "finished_auctions": 480,
+       "rolled_up": 479,
+       "not_yet_counted": 1
+      },
+      {
+       "sampled_at": "2026-10-20T14:02:20.000+00:00",
+       "finished_auctions": 720,
+       "rolled_up": 719,
+       "not_yet_counted": 1
+      },
+      {
+       "sampled_at": "2026-10-20T14:02:30.000+00:00",
+       "finished_auctions": 960,
+       "rolled_up": 839,
+       "not_yet_counted": 121
+      },
+      {
+       "sampled_at": "2026-10-20T14:02:40.000+00:00",
+       "finished_auctions": 1200,
+       "rolled_up": 957,
+       "not_yet_counted": 243
+      },
+      {
+       "sampled_at": "2026-10-20T14:02:50.000+00:00",
+       "finished_auctions": 1440,
+       "rolled_up": 1075,
+       "not_yet_counted": 365
+      },
+      {
+       "sampled_at": "2026-10-20T14:03:00.000+00:00",
+       "finished_auctions": 1680,
+       "rolled_up": 1193,
+       "not_yet_counted": 487
+      },
+      {
+       "sampled_at": "2026-10-20T14:03:10.000+00:00",
+       "finished_auctions": 1920,
+       "rolled_up": 1312,
+       "not_yet_counted": 608
+      },
+      {
+       "sampled_at": "2026-10-20T14:03:20.000+00:00",
+       "finished_auctions": 2160,
+       "rolled_up": 1430,
+       "not_yet_counted": 730
+      },
+      {
+       "sampled_at": "2026-10-20T14:03:30.000+00:00",
+       "finished_auctions": 2400,
+       "rolled_up": 1548,
+       "not_yet_counted": 852
+      },
+      {
+       "sampled_at": "2026-10-20T14:03:40.000+00:00",
+       "finished_auctions": 2640,
+       "rolled_up": 1666,
+       "not_yet_counted": 974
+      },
+      {
+       "sampled_at": "2026-10-20T14:03:50.000+00:00",
+       "finished_auctions": 2880,
+       "rolled_up": 1784,
+       "not_yet_counted": 1096
+      }
+     ]
+    }
+   },
+   "deployments": [],
+   "reports": {
+    "fixed_workflow": {
+     "method": "fixed_workflow",
+     "incident_id": "inc-af7c7b81",
+     "hypotheses": [
+      {
+       "category": "poison_message",
+       "statement": "One undecodable event crash-loops the worker; its consumer groups stop advancing and the analytics rollup falls behind.",
+       "confidence": 0.86,
+       "supporting": [
+        "E1",
+        "E2",
+        "E3"
+       ],
+       "refuting": [],
+       "component": "auction-events topic / worker consumers (message that fails deserialization)"
+      },
+      {
+       "category": "duplicate_delivery_idempotency",
+       "statement": "Events were delivered twice and double-counted.",
+       "confidence": 0.22,
+       "supporting": [
+        "E3"
+       ],
+       "refuting": [
+        "E1"
+       ],
+       "component": ""
+      },
+      {
+       "category": "config_regression",
+       "statement": "A setting changed in the same deploy caused the drop.",
+       "confidence": 0.14,
+       "supporting": [
+        "E3"
+       ],
+       "refuting": [
+        "E1"
+       ],
+       "component": ""
+      }
+     ],
+     "abstained": false,
+     "abstain_reason": "",
+     "timeline": [
+      {
+       "at": "2026-10-20T14:02:45.000+00:00",
+       "event": "analytics rollup starts drifting from the auction table",
+       "evidence": [
+        "E1"
+       ]
+      }
+     ],
+     "evidence": {
+      "E1": {
+       "id": "E1",
+       "tool": "analytics_consistency",
+       "args": {
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "worker logs show repeated JSONDecodeError tracebacks and worker_starting lines"
+       }
+      },
+      "E2": {
+       "id": "E2",
+       "tool": "consumer_lag",
+       "args": {
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "consumer lag grows on all three groups while their committed offsets stay put"
+       }
+      },
+      "E3": {
+       "id": "E3",
+       "tool": "search_logs",
+       "args": {
+        "service": "worker",
+        "pattern": "JSONDecodeError|Traceback",
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "auction success rate is unaffected"
+       }
+      }
+     },
+     "tool_calls": 5,
+     "elapsed_seconds": 0.4,
+     "cost_usd": 0.0,
+     "meta": {
+      "sample": true
+     }
+    },
+    "agent_offline": {
+     "method": "agent_offline",
+     "incident_id": "inc-af7c7b81",
+     "hypotheses": [
+      {
+       "category": "poison_message",
+       "statement": "One undecodable event crash-loops the worker; its consumer groups stop advancing and the analytics rollup falls behind.",
+       "confidence": 0.86,
+       "supporting": [
+        "E1",
+        "E2",
+        "E3"
+       ],
+       "refuting": [],
+       "component": "auction-events topic / worker consumers (message that fails deserialization)"
+      },
+      {
+       "category": "duplicate_delivery_idempotency",
+       "statement": "Events were delivered twice and double-counted.",
+       "confidence": 0.22,
+       "supporting": [
+        "E3"
+       ],
+       "refuting": [
+        "E1"
+       ],
+       "component": ""
+      },
+      {
+       "category": "config_regression",
+       "statement": "A setting changed in the same deploy caused the drop.",
+       "confidence": 0.14,
+       "supporting": [
+        "E3"
+       ],
+       "refuting": [
+        "E1"
+       ],
+       "component": ""
+      }
+     ],
+     "abstained": false,
+     "abstain_reason": "",
+     "timeline": [
+      {
+       "at": "2026-10-20T14:02:45.000+00:00",
+       "event": "analytics rollup starts drifting from the auction table",
+       "evidence": [
+        "E1"
+       ]
+      }
+     ],
+     "evidence": {
+      "E1": {
+       "id": "E1",
+       "tool": "analytics_consistency",
+       "args": {
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "worker logs show repeated JSONDecodeError tracebacks and worker_starting lines"
+       }
+      },
+      "E2": {
+       "id": "E2",
+       "tool": "consumer_lag",
+       "args": {
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "consumer lag grows on all three groups while their committed offsets stay put"
+       }
+      },
+      "E3": {
+       "id": "E3",
+       "tool": "search_logs",
+       "args": {
+        "service": "worker",
+        "pattern": "JSONDecodeError|Traceback",
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "auction success rate is unaffected"
+       }
+      }
+     },
+     "tool_calls": 8,
+     "elapsed_seconds": 1.7,
+     "cost_usd": 0.0,
+     "meta": {
+      "sample": true
+     }
+    }
+   },
+   "proposals": {
+    "fixed_workflow": {
+     "run_id": "20261020T170200Z-s08-poison-message-crash-loop",
+     "method": "fixed_workflow",
+     "hypothesis": "poison_message",
+     "changes": [
+      {
+       "kind": "skip_stuck_message",
+       "groups": [
+        "analytics-consumer",
+        "audit-consumer",
+        "budget-consumer"
+       ]
+      }
+     ],
+     "rationale": "Skip the one undecodable message (advance the stuck groups' offsets by one).",
+     "resolved_changes": [
+      {
+       "kind": "skip_stuck_message",
+       "groups": [
+        "analytics-consumer",
+        "audit-consumer",
+        "budget-consumer"
+       ]
+      }
+     ],
+     "status": "awaiting_approval",
+     "created_at": "2026-10-20T14:11:00.000+00:00",
+     "digest": "7fdaef9a5715b94e5ef159a97306a2ecdd27cdfd9f9fa8baf1dcd1bf1978202f"
+    },
+    "agent_offline": {
+     "run_id": "20261020T170200Z-s08-poison-message-crash-loop",
+     "method": "agent_offline",
+     "hypothesis": "poison_message",
+     "changes": [
+      {
+       "kind": "skip_stuck_message",
+       "groups": [
+        "analytics-consumer",
+        "audit-consumer",
+        "budget-consumer"
+       ]
+      }
+     ],
+     "rationale": "Skip the one undecodable message (advance the stuck groups' offsets by one).",
+     "resolved_changes": [
+      {
+       "kind": "skip_stuck_message",
+       "groups": [
+        "analytics-consumer",
+        "audit-consumer",
+        "budget-consumer"
+       ]
+      }
+     ],
+     "status": "awaiting_approval",
+     "created_at": "2026-10-20T14:11:00.000+00:00",
+     "digest": "c0bf45de656e059079e2f77ce2ad9472c83cf0bc15e3a5d5cf4d68daa9fd5a5f"
+    }
+   },
+   "grading": {
+    "ground_truth": {
+     "scenario_id": "s08-poison-message-crash-loop",
+     "ambiguous": false,
+     "category": "poison_message",
+     "component": "auction-events topic / worker consumers (message that fails deserialization)",
+     "summary": "A truncated JSON message landed on auction-events. The worker's consumers decode messages in the Kafka client's deserializer, outside the retry and dead-letter path, so the exception kills the whole worker process. It restarts, reads the same uncommitted message, and dies again. Auctions still succeed, but nothing downstream is consumed: consumer lag grows and the analytics rollup falls further behind every second.\n",
+     "distinguishing_evidence": [
+      "worker logs show repeated JSONDecodeError tracebacks and worker_starting lines",
+      "consumer lag grows on all three groups while their committed offsets stay put",
+      "auction success rate is unaffected"
+     ],
+     "remediation": {
+      "description": "Skip the one undecodable message (advance the stuck groups' offsets by one).",
+      "changes": [
+       {
+        "kind": "skip_stuck_message",
+        "groups": [
+         "analytics-consumer",
+         "audit-consumer",
+         "budget-consumer"
+        ]
+       }
+      ],
+      "expected_min_success_rate": 0.9
+     },
+     "candidates": []
+    },
+    "verification": {
+     "baseline": 1.0,
+     "incident": 1096.0,
+     "unit": "drift",
+     "passed": true
+    },
+    "grades": [
+     {
+      "method": "fixed_workflow",
+      "scenario_id": "s08-poison-message-crash-loop",
+      "truth": "poison_message",
+      "predicted": "poison_message",
+      "top3": [
+       "poison_message",
+       "duplicate_delivery_idempotency",
+       "config_regression"
+      ],
+      "top1_correct": true,
+      "abstained": false,
+      "correct_abstention": null,
+      "supported": true,
+      "tool_calls": 5,
+      "elapsed_seconds": 0.4,
+      "cost_usd": 0.0
+     },
+     {
+      "method": "agent_offline",
+      "scenario_id": "s08-poison-message-crash-loop",
+      "truth": "poison_message",
+      "predicted": "poison_message",
+      "top3": [
+       "poison_message",
+       "duplicate_delivery_idempotency",
+       "config_regression"
+      ],
+      "top1_correct": true,
+      "abstained": false,
+      "correct_abstention": null,
+      "supported": true,
+      "tool_calls": 8,
+      "elapsed_seconds": 1.7,
+      "cost_usd": 0.0
+     }
+    ]
+   }
+  },
+  {
+   "run_id": "20261020T180200Z-s04-ambiguous-deadline-and-slow-bidders",
+   "scenario_id": "s04-ambiguous-deadline-and-slow-bidders",
+   "incident": {
+    "incident_id": "inc-73368827",
+    "report": "Auction success rate dropped sharply shortly after the auction backend was deployed this afternoon. Identify the likely cause, show the supporting evidence, and test a remediation without touching the live system.",
+    "telemetry_window": [
+     "2026-10-20T14:02:00.000+00:00",
+     "2026-10-20T14:03:40.000+00:00"
+    ],
+    "services": [
+     "backend",
+     "worker",
+     "dsp-simulator",
+     "postgres",
+     "redis",
+     "kafka"
+    ],
+    "alert": {
+     "metric": "auction_success_rate",
+     "definition": "share of publisher auction requests answered 201 with status COMPLETED within 2s",
+     "timeline": [
+      {
+       "window_start": "2026-10-20T14:02:00.000+00:00",
+       "requests": 120,
+       "success_rate": 1,
+       "p50_latency_ms": 64,
+       "p95_latency_ms": 120,
+       "errors": {}
+      },
+      {
+       "window_start": "2026-10-20T14:02:10.000+00:00",
+       "requests": 120,
+       "success_rate": 0.998,
+       "p50_latency_ms": 64,
+       "p95_latency_ms": 123,
+       "errors": {}
+      },
+      {
+       "window_start": "2026-10-20T14:02:20.000+00:00",
+       "requests": 120,
+       "success_rate": 1,
+       "p50_latency_ms": 64,
+       "p95_latency_ms": 126,
+       "errors": {}
+      },
+      {
+       "window_start": "2026-10-20T14:02:30.000+00:00",
+       "requests": 120,
+       "success_rate": 0.998,
+       "p50_latency_ms": 64,
+       "p95_latency_ms": 129,
+       "errors": {}
+      },
+      {
+       "window_start": "2026-10-20T14:02:40.000+00:00",
+       "requests": 120,
+       "success_rate": 0.62,
+       "p50_latency_ms": 101,
+       "p95_latency_ms": 104,
+       "errors": {
+        "no_bid": 118
+       }
+      },
+      {
+       "window_start": "2026-10-20T14:02:50.000+00:00",
+       "requests": 120,
+       "success_rate": 0,
+       "p50_latency_ms": 101,
+       "p95_latency_ms": 104,
+       "errors": {
+        "no_bid": 118
+       }
+      },
+      {
+       "window_start": "2026-10-20T14:03:00.000+00:00",
+       "requests": 120,
+       "success_rate": 0.01,
+       "p50_latency_ms": 101,
+       "p95_latency_ms": 104,
+       "errors": {
+        "no_bid": 118
+       }
+      },
+      {
+       "window_start": "2026-10-20T14:03:10.000+00:00",
+       "requests": 120,
+       "success_rate": 0,
+       "p50_latency_ms": 101,
+       "p95_latency_ms": 104,
+       "errors": {
+        "no_bid": 118
+       }
+      },
+      {
+       "window_start": "2026-10-20T14:03:20.000+00:00",
+       "requests": 120,
+       "success_rate": 0,
+       "p50_latency_ms": 101,
+       "p95_latency_ms": 104,
+       "errors": {
+        "no_bid": 118
+       }
+      },
+      {
+       "window_start": "2026-10-20T14:03:30.000+00:00",
+       "requests": 120,
+       "success_rate": 0.01,
+       "p50_latency_ms": 101,
+       "p95_latency_ms": 104,
+       "errors": {
+        "no_bid": 118
+       }
+      }
+     ]
+    }
+   },
+   "deployments": [
+    {
+     "started_at": "2026-10-20T14:02:40.000+00:00",
+     "finished_at": "2026-10-20T14:02:47.000+00:00",
+     "services": [
+      "backend",
+      "worker"
+     ],
+     "from_version": "1.0.0",
+     "to_version": "1.4.0",
+     "changes": {
+      "AUCTION_GLOBAL_TIMEOUT_MS": {
+       "from": "100",
+       "to": "80"
+      },
+      "REDIS_CACHE_TTL_SECONDS": {
+       "from": "30",
+       "to": "45"
+      }
+     },
+     "migrations": []
+    }
+   ],
+   "reports": {
+    "fixed_workflow": {
+     "method": "fixed_workflow",
+     "incident_id": "inc-73368827",
+     "hypotheses": [
+      {
+       "category": "config_regression",
+       "statement": "Deploy 1.4.0 cut the global auction deadline to 80 ms, which cuts every bid call short.",
+       "confidence": 0.45,
+       "supporting": [
+        "E1",
+        "E2"
+       ],
+       "refuting": [],
+       "component": ""
+      },
+      {
+       "category": "external_dsp_latency",
+       "statement": "External bidders became too slow to answer in time.",
+       "confidence": 0.45,
+       "supporting": [
+        "E1",
+        "E2"
+       ],
+       "refuting": [],
+       "component": ""
+      }
+     ],
+     "abstained": true,
+     "abstain_reason": "The deadline cut and the bidder slowdown landed two seconds apart and both put bids past the cut-off. The recorded telemetry cannot say which one alone would have broken auctions, so this needs a controlled test, not a guess.",
+     "timeline": [
+      {
+       "at": "2026-10-20T14:02:40.000+00:00",
+       "event": "deploy 1.0.0 -> 1.4.0 changes AUCTION_GLOBAL_TIMEOUT_MS, REDIS_CACHE_TTL_SECONDS",
+       "evidence": [
+        "E3"
+       ]
+      },
+      {
+       "at": "2026-10-20T14:02:45.000+00:00",
+       "event": "success rate drops below half of its baseline",
+       "evidence": [
+        "E1"
+       ]
+      }
+     ],
+     "evidence": {
+      "E1": {
+       "id": "E1",
+       "tool": "list_deployments",
+       "args": {
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "TIMEOUT bids for DSP-A/B/D/E land at ~80ms, the new global deadline, so their true latency is censored"
+       }
+      },
+      "E2": {
+       "id": "E2",
+       "tool": "span_latency",
+       "args": {
+        "name": "dsp.bid",
+        "group_by": "dsp.name",
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "DSP-A answered in ~26ms before the deploy and now times out at 80ms, so the bidders did slow down"
+       }
+      },
+      "E3": {
+       "id": "E3",
+       "tool": "span_latency",
+       "args": {
+        "name": "dsp.fanout",
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "the deploy lowered AUCTION_GLOBAL_TIMEOUT_MS from 100 to 80 at the same moment"
+       }
+      }
+     },
+     "tool_calls": 6,
+     "elapsed_seconds": 0.4,
+     "cost_usd": 0.0,
+     "meta": {
+      "sample": true
+     }
+    },
+    "agent_offline": {
+     "method": "agent_offline",
+     "incident_id": "inc-73368827",
+     "hypotheses": [
+      {
+       "category": "config_regression",
+       "statement": "Deploy 1.4.0 cut the global auction deadline to 80 ms, which cuts every bid call short.",
+       "confidence": 0.45,
+       "supporting": [
+        "E1",
+        "E2"
+       ],
+       "refuting": [],
+       "component": ""
+      },
+      {
+       "category": "external_dsp_latency",
+       "statement": "External bidders became too slow to answer in time.",
+       "confidence": 0.45,
+       "supporting": [
+        "E1",
+        "E2"
+       ],
+       "refuting": [],
+       "component": ""
+      }
+     ],
+     "abstained": true,
+     "abstain_reason": "The deadline cut and the bidder slowdown landed two seconds apart and both put bids past the cut-off. The recorded telemetry cannot say which one alone would have broken auctions, so this needs a controlled test, not a guess.",
+     "timeline": [
+      {
+       "at": "2026-10-20T14:02:40.000+00:00",
+       "event": "deploy 1.0.0 -> 1.4.0 changes AUCTION_GLOBAL_TIMEOUT_MS, REDIS_CACHE_TTL_SECONDS",
+       "evidence": [
+        "E3"
+       ]
+      },
+      {
+       "at": "2026-10-20T14:02:45.000+00:00",
+       "event": "success rate drops below half of its baseline",
+       "evidence": [
+        "E1"
+       ]
+      }
+     ],
+     "evidence": {
+      "E1": {
+       "id": "E1",
+       "tool": "list_deployments",
+       "args": {
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "TIMEOUT bids for DSP-A/B/D/E land at ~80ms, the new global deadline, so their true latency is censored"
+       }
+      },
+      "E2": {
+       "id": "E2",
+       "tool": "span_latency",
+       "args": {
+        "name": "dsp.bid",
+        "group_by": "dsp.name",
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "DSP-A answered in ~26ms before the deploy and now times out at 80ms, so the bidders did slow down"
+       }
+      },
+      "E3": {
+       "id": "E3",
+       "tool": "span_latency",
+       "args": {
+        "name": "dsp.fanout",
+        "start": "2026-10-20T14:02:00.000+00:00",
+        "end": "2026-10-20T14:03:40.000+00:00"
+       },
+       "result": {
+        "finding": "the deploy lowered AUCTION_GLOBAL_TIMEOUT_MS from 100 to 80 at the same moment"
+       }
+      }
+     },
+     "tool_calls": 6,
+     "elapsed_seconds": 1.9,
+     "cost_usd": 0.0,
+     "meta": {
+      "sample": true
+     }
+    }
+   },
+   "proposals": {
+    "fixed_workflow": {
+     "run_id": "20261020T180200Z-s04-ambiguous-deadline-and-slow-bidders",
+     "method": "fixed_workflow",
+     "hypothesis": null,
+     "changes": [
+      {
+       "kind": "rollback_setting",
+       "setting": "AUCTION_GLOBAL_TIMEOUT_MS"
+      }
+     ],
+     "rationale": "the investigation abstained; rolling back the suspect deploy's risky settings shows whether that deploy alone explains the drop",
+     "resolved_changes": [
+      {
+       "kind": "rollback_setting",
+       "setting": "AUCTION_GLOBAL_TIMEOUT_MS"
+      }
+     ],
+     "status": "awaiting_approval",
+     "created_at": "2026-10-20T14:11:00.000+00:00",
+     "digest": "f1918dd8c1ce3195d55a4e471b1b59e0bc6941d9b8338efbb06919b04bc8321d"
+    },
+    "agent_offline": {
+     "run_id": "20261020T180200Z-s04-ambiguous-deadline-and-slow-bidders",
+     "method": "agent_offline",
+     "hypothesis": null,
+     "changes": [
+      {
+       "kind": "rollback_setting",
+       "setting": "AUCTION_GLOBAL_TIMEOUT_MS"
+      }
+     ],
+     "rationale": "the investigation abstained; rolling back the suspect deploy's risky settings shows whether that deploy alone explains the drop",
+     "resolved_changes": [
+      {
+       "kind": "rollback_setting",
+       "setting": "AUCTION_GLOBAL_TIMEOUT_MS"
+      }
+     ],
+     "status": "awaiting_approval",
+     "created_at": "2026-10-20T14:11:00.000+00:00",
+     "digest": "50dcb404c43a44aeca67bb567e0aab635d46e050ad2eb59e554134d39d4b9df0"
+    }
+   },
+   "grading": {
+    "ground_truth": {
+     "scenario_id": "s04-ambiguous-deadline-and-slow-bidders",
+     "ambiguous": true,
+     "category": "config_regression",
+     "component": "backend setting AUCTION_GLOBAL_TIMEOUT_MS together with slower DSP-A, DSP-B, DSP-D, DSP-E",
+     "summary": "Neither change alone breaks auctions: the bidders at ~85ms fit in the old 100ms deadline, and the 80ms deadline is fine for bidders at 25-60ms. Together, every call to the four slowed bidders is cut at 80ms. The telemetry cannot tell this apart from \"the bidders became too slow for any deadline\", because their real latency is never observed: every call ends at the 80ms cut. Abstaining, or ranking both causes, is the honest answer; a sandbox experiment that restores the 100ms deadline settles it (success recovers).\n",
+     "distinguishing_evidence": [
+      "TIMEOUT bids for DSP-A/B/D/E land at ~80ms, the new global deadline, so their true latency is censored",
+      "DSP-A answered in ~26ms before the deploy and now times out at 80ms, so the bidders did slow down",
+      "the deploy lowered AUCTION_GLOBAL_TIMEOUT_MS from 100 to 80 at the same moment"
+     ],
+     "remediation": {
+      "description": "Roll AUCTION_GLOBAL_TIMEOUT_MS back to 100. Raising per-DSP timeouts alone does not help, since the 80ms global deadline still cuts every call.\n",
+      "changes": [
+       {
+        "kind": "deploy_setting",
+        "setting": "AUCTION_GLOBAL_TIMEOUT_MS",
+        "value": "100"
+       }
+      ],
+      "expected_min_success_rate": 0.9
+     },
+     "candidates": [
+      "config_regression",
+      "external_dsp_latency"
+     ]
+    },
+    "verification": {
+     "baseline": 100.0,
+     "incident": 0.0,
+     "unit": "%",
+     "passed": true
+    },
+    "grades": [
+     {
+      "method": "fixed_workflow",
+      "scenario_id": "s04-ambiguous-deadline-and-slow-bidders",
+      "truth": "config_regression",
+      "predicted": null,
+      "top3": [
+       "config_regression",
+       "external_dsp_latency"
+      ],
+      "top1_correct": false,
+      "abstained": true,
+      "correct_abstention": true,
+      "supported": null,
+      "tool_calls": 6,
+      "elapsed_seconds": 0.4,
+      "cost_usd": 0.0
+     },
+     {
+      "method": "agent_offline",
+      "scenario_id": "s04-ambiguous-deadline-and-slow-bidders",
+      "truth": "config_regression",
+      "predicted": null,
+      "top3": [
+       "config_regression",
+       "external_dsp_latency"
+      ],
+      "top1_correct": false,
+      "abstained": true,
+      "correct_abstention": true,
+      "supported": null,
+      "tool_calls": 6,
+      "elapsed_seconds": 1.9,
+      "cost_usd": 0.0
+     }
+    ]
+   }
+  }
+ ]
+}
