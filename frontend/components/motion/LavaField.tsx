@@ -8,9 +8,10 @@ import { useEffect, useRef, type RefObject } from "react";
  * `data-lava="n"`, and as you scroll the embers flow from one formation to the
  * next, each on its own slight delay so the shape melts rather than snaps.
  *
- *   0  core     a 3D cloud of embers on the right of the hero; it turns
- *               slowly on its own and turns further as you scroll
- *   1  burst    the core slides to the middle of the screen and blows
+ *   0  gavel    an auctioneer's gavel and block in 3D, on the right of the
+ *               hero; it turns slowly, turns further as you scroll, and
+ *               strikes the block every time an auction is sold
+ *   1  burst    the gavel slides to the middle of the screen and blows
  *               outward from there, a warp-field streaming toward you
  *   2  lanes    five streams, one per DSP, each at its own speed
  *   3  line     everything settles into the 100 ms deadline
@@ -27,6 +28,56 @@ type Props = {
 };
 
 const FORMATIONS = 4;
+
+/*
+ * The gavel, in its own units. The handle runs up the y axis from its end at
+ * the origin; the head sits across the top with its axis along x. The whole
+ * gavel then turns about the handle end (PIVOT) by REST, and by STRIKE at the
+ * moment it hits the round block.
+ */
+const PIVOT = { x: 1.05, y: -0.45 };
+const REST = 0.85;
+const STRIKE = 1.46;
+const MID = { x: -0.12, y: 0.08 }; // centre of the whole scene
+const FIT = 0.64; // scales the scene to roughly a unit radius
+
+function ring(r: number) {
+  const a = Math.random() * Math.PI * 2;
+  return [Math.cos(a) * r, Math.sin(a) * r] as const;
+}
+
+function gavelPoint(): { x: number; y: number; z: number; block: boolean } {
+  const k = Math.random();
+  if (k < 0.4) {
+    // Head barrel: a cylinder along x, with raised collars near each end.
+    const x = (Math.random() * 2 - 1) * 0.6;
+    const collar = Math.abs(Math.abs(x) - 0.42) < 0.05;
+    const [y, z] = ring(collar ? 0.34 : 0.3);
+    return { x, y: 1.9 + y, z, block: false };
+  }
+  if (k < 0.52) {
+    // Head faces: the two flat striking ends.
+    const [y, z] = ring(0.3 * Math.sqrt(Math.random()));
+    return { x: Math.random() < 0.5 ? -0.6 : 0.6, y: 1.9 + y, z, block: false };
+  }
+  if (k < 0.72) {
+    // Handle, a little thicker at the grip, with a knob at the end.
+    const y = Math.random() * 1.6;
+    const r = y < 0.12 ? 0.1 : 0.055 + 0.025 * (1 - y / 1.6);
+    const [x, z] = ring(r);
+    return { x, y, z, block: false };
+  }
+  // The sound block: a low round base where the head lands.
+  const top = Math.random() < 0.55;
+  const bx = -0.85;
+  const by = -1.1;
+  if (top) {
+    const [x, z] = ring(0.55 * Math.sqrt(Math.random()));
+    return { x: bx + x, y: by + 0.18, z, block: true };
+  }
+  const [x, z] = ring(0.55);
+  return { x: bx + x, y: by + Math.random() * 0.18, z, block: true };
+}
 
 export function LavaField({ anchor, start, pulse, colors = ["#dc5000", "#ff7a2f", "#ffb829", "#ffedd7"] }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -75,24 +126,19 @@ export function LavaField({ anchor, start, pulse, colors = ["#dc5000", "#ff7a2f"
     // Per-ember constants: everything a formation needs, rolled once.
     const P = Array.from({ length: N }, (_, i) => {
       const lane = i % 5;
-      // A random direction, pushed out to a lumpy two-lobed surface.
+      // A random direction for the burst, and a point on the gavel or its block.
       const u = Math.random() * 2 - 1;
       const th = Math.random() * Math.PI * 2;
       const sq = Math.sqrt(1 - u * u);
-      let dx = sq * Math.cos(th);
-      let dy = u;
-      let dz = sq * Math.sin(th);
-      const folds = 1 + 0.13 * Math.sin(7 * th + 3 * Math.sin(5 * u)) + 0.06 * Math.sin(13 * u + 2 * th);
-      const groove = 1 - 0.12 * Math.exp(-(dx * dx) * 60) * (dy > -0.3 ? 1 : 0); // the split between lobes
-      const shell = Math.random() < 0.82 ? 0.93 + 0.07 * Math.random() : 0.35 + 0.5 * Math.random(); // mostly skin, a little core
-      const rr = folds * groove * shell;
-      dx *= rr * 1.12;
-      dy *= rr * 0.86;
-      dz *= rr * 0.98;
+      const g = gavelPoint();
       return {
-        px: dx,
-        py: dy,
-        pz: dz,
+        bx: sq * Math.cos(th),
+        by: u,
+        bz: sq * Math.sin(th),
+        gx: g.x,
+        gy: g.y,
+        gz: g.z,
+        block: g.block,
         tri: Math.random() < 0.24, // drawn as a small outlined triangle, not a glow
         a: Math.random() * Math.PI * 2, // angle on the orb
         r: 0.62 + 0.38 * Math.pow(Math.random(), 0.7), // radius within the ring
@@ -179,9 +225,15 @@ export function LavaField({ anchor, start, pulse, colors = ["#dc5000", "#ff7a2f"
     const target = (p: (typeof P)[number], f: number, t: number, cx: number, cy: number, R: number, out: { x: number; y: number; s: number }) => {
       switch (f) {
         case 0: {
-          // The core, breathing a little.
-          const breathe = 1 + 0.025 * Math.sin(t * 1.1 + p.a * 2);
-          project(p.px * breathe, p.py * breathe, p.pz * breathe, cx, cy, R, out);
+          // The gavel swings about the end of its handle; the block stays put.
+          let x = p.gx;
+          let y = p.gy;
+          if (!p.block) {
+            x = p.gx * pose.c - p.gy * pose.s + PIVOT.x;
+            y = p.gx * pose.s + p.gy * pose.c + PIVOT.y;
+          }
+          const j = 0.008 * Math.sin(t * 1.3 + p.a * 5); // a faint shimmer
+          project((x - MID.x) * FIT + j, -(y - MID.y) * FIT + j, p.gz * FIT, cx, cy, R, out);
           return;
         }
         case 1: {
@@ -189,7 +241,7 @@ export function LavaField({ anchor, start, pulse, colors = ["#dc5000", "#ff7a2f"
           // its own direction, wrapping back to the centre: a warp field.
           const k = (((p.sx + t * 0.045 * p.drift) % 1) + 1) % 1;
           const d = 0.35 + k * k * 4.2;
-          project(p.px * d, p.py * d, p.pz * d * 0.4, w / 2, h / 2, Math.max(w, h) * 0.32, out);
+          project(p.bx * d, p.by * d, p.bz * d * 0.4, w / 2, h / 2, Math.max(w, h) * 0.32, out);
           out.s *= Math.min(1, k * 6) * (0.6 + k * 0.9);
           return;
         }
@@ -213,6 +265,8 @@ export function LavaField({ anchor, start, pulse, colors = ["#dc5000", "#ff7a2f"
       }
     };
 
+    // The gavel's swing: resting raised, it comes down on each sale and lifts again.
+    const pose = { c: 1, s: 0 };
     const A = { x: 0, y: 0, s: 1 };
     const B = { x: 0, y: 0, s: 1 };
     const scrollSpin = () => window.scrollY * 0.0026;
@@ -229,10 +283,17 @@ export function LavaField({ anchor, start, pulse, colors = ["#dc5000", "#ff7a2f"
       const cx = box ? box.left + box.width / 2 : w / 2;
       const cy = box ? box.top + box.height / 2 : h / 2;
       const pulseK = Math.exp(-(now - s.pulseAt) / 500);
-      const R = (box ? box.width * 0.44 : Math.min(w, h) * 0.3) * (1 + 0.08 * pulseK);
-      // Spin: a slow turn of its own, plus more as you scroll.
-      const ry = (reduce ? 0.6 : t * 0.16) + scrollSpin();
+      const R = box ? box.width * 0.46 : Math.min(w, h) * 0.3;
+      // Turn: a slow sway of its own, plus a full turn as you scroll.
+      // It sways through a three-quarter view rather than spinning all the way
+      // round, so the swing of the gavel always faces you.
+      const ry = (reduce ? -0.35 : -0.35 + 0.5 * Math.sin(t * 0.32)) + scrollSpin();
       const rx = 0.28 + (reduce ? 0 : 0.12 * Math.sin(t * 0.23)) + window.scrollY * 0.0005;
+      const sincePulse = (now - s.pulseAt) / 1000;
+      const hit = reduce || sincePulse < 0 ? 0 : sincePulse < 0.14 ? Math.pow(sincePulse / 0.14, 2) : Math.exp(-(sincePulse - 0.14) / 0.35);
+      const swing = REST + (STRIKE - REST) * hit + (reduce ? 0 : 0.03 * Math.sin(t * 0.9));
+      pose.c = Math.cos(swing);
+      pose.s = Math.sin(swing);
       rot.cy = Math.cos(ry);
       rot.sy = Math.sin(ry);
       rot.cx = Math.cos(rx);

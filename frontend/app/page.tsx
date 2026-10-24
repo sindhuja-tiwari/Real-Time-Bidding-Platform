@@ -13,7 +13,7 @@ import { useLiveAuctions } from "@/lib/live";
 import { useData, useQuery } from "@/lib/data";
 import type { Bid } from "@/lib/api";
 import { T } from "@/lib/theme";
-import { RadialRace, narrate } from "@/components/ui/RadialRace";
+import { narrate } from "@/components/ui/RadialRace";
 import { SwapText } from "@/components/motion/SwapText";
 import { DashRule } from "@/components/motion/DashRule";
 import { useInView } from "@/components/motion/hooks";
@@ -137,25 +137,8 @@ export default function LivePage() {
 
         </div>
 
-        <div ref={object} className="relative order-1 mx-auto aspect-square w-full max-w-[720px] opacity-0 lg:order-2">
-          <div className="absolute inset-[24%]">
-            {bids.length > 0 && (
-              <RadialRace
-                bids={bids}
-                uppercase
-                theme={{
-                  ring: "rgba(255,237,215,0.07)",
-                  deadline: T.ember,
-                  dot: T.cream,
-                  winner: T.saffron,
-                  timeout: T.ember,
-                  label: T.cream,
-                  muted: T.drift,
-                }}
-              />
-            )}
-          </div>
-        </div>
+        {/* Placeholder that sizes and positions the 3D gavel drawn by LavaField. */}
+        <div ref={object} aria-hidden className="relative order-1 mx-auto aspect-square w-full max-w-[720px] lg:order-2" />
 
         <div className="pointer-events-none absolute bottom-6 left-1/2 hidden -translate-x-1/2 flex-col items-center gap-2 text-[11px] font-medium uppercase md:flex" style={{ color: T.drift }}>
           Scroll
