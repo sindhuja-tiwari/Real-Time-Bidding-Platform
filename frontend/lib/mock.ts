@@ -88,8 +88,35 @@ function createStore(): Store {
   return s;
 }
 
+// The store is kept in sessionStorage so a refresh, or a link opened from the
+// same tab, still finds the demo auctions it points at.
+const STORE_KEY = "rtb.demoStore.v1";
+
+function loadStore(): Store | null {
+  try {
+    const raw = window.sessionStorage.getItem(STORE_KEY);
+    return raw ? (JSON.parse(raw) as Store) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveStore(s: Store) {
+  try {
+    window.sessionStorage.setItem(STORE_KEY, JSON.stringify(s));
+  } catch {
+    /* storage unavailable or full: the demo still works, it just won't survive a reload */
+  }
+}
+
 function getStore(): Store {
-  if (!store) store = createStore();
+  if (!store) {
+    store = loadStore();
+    if (!store) {
+      store = createStore();
+      saveStore(store);
+    }
+  }
   return store;
 }
 
@@ -197,7 +224,7 @@ export const mockApi = {
   auctions: async (limit = 50) => delay(clone(getStore().auctions.slice(0, limit))),
   auction: async (id: string) => {
     const a = getStore().auctions.find((x) => x.id === id);
-    if (!a) throw new Error("Auction not found in demo data");
+    if (!a) throw new Error("This auction isn't in this browser's demo data. Demo auctions live in the tab that ran them, so links from another session don't carry over.");
     return delay(clone(a));
   },
   bidsForAuction: async (id: string) => delay(clone(getStore().bids[id] ?? [])),
@@ -205,7 +232,9 @@ export const mockApi = {
     delay(getStore().dsps.map(({ spec: _spec, campaign_id: _c, ...d }) => ({ ...d }))),
   campaigns: async () => delay(clone(getStore().campaigns)),
   runAuction: async (req: AuctionRequest) => {
-    const res = simulate(getStore(), req);
+    const s = getStore();
+    const res = simulate(s, req);
+    saveStore(s);
     // Let the UI see roughly the time the auction "took".
     return delay(clone(res.auction), res.auction.duration_ms ?? 60);
   },
