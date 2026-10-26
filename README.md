@@ -12,6 +12,14 @@ harness.
 **Stack:** Python, FastAPI, asyncio, PostgreSQL, Redis, Kafka, Docker Compose, OpenTelemetry,
 Next.js, Prometheus, Grafana, Locust.
 
+| | |
+|---|---|
+| ![Live page: auctions on autoplay with the winning DSP and clearing price](docs/screenshots/home.jpg) | ![One auction: every DSP's response time, bid and outcome](docs/screenshots/auction-detail.jpg) |
+| ![Field page: win rate, reply time and timeouts per DSP](docs/screenshots/dsps.jpg) | ![EvidenceOps incident case file](docs/screenshots/incident-detail.jpg) |
+
+The UI runs on its own in demo mode (an in-browser simulation of the auction engine), so it can be
+tried without Docker; see [Running just the UI](#running-just-the-ui-no-docker).
+
 ## What it does
 
 A publisher sends an ad request (`POST /api/v1/auctions`). The platform concurrently asks every
@@ -89,6 +97,12 @@ $0.50 floor, and second-price clearing at the runner-up's bid plus one cent. The
 the top-right switches between **auto** (live when the backend is up), **live** and
 **demo**. To run live auctions, paste the `ad_slot_id` from the seed script into the
 System page.
+
+Demo-mode data lives in the browser tab (sessionStorage), so a refresh keeps your auctions.
+
+**Hosting the demo.** Because demo mode needs no backend, the frontend deploys as-is to Vercel:
+import the repository at [vercel.com/new](https://vercel.com/new), set **Root Directory** to
+`frontend`, and deploy. No environment variables are needed.
 
 | Page | What it shows |
 |---|---|
