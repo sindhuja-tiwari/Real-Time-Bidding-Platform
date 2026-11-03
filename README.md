@@ -12,6 +12,8 @@ harness.
 **Stack:** Python, FastAPI, asyncio, PostgreSQL, Redis, Kafka, Docker Compose, OpenTelemetry,
 Next.js, Prometheus, Grafana, Locust.
 
+**Live Demo:** https://real-time-bidding-platform-ten.vercel.app/ 
+
 | | |
 |---|---|
 | ![Live page: auctions on autoplay with the winning DSP and clearing price](docs/screenshots/home.jpg) | ![One auction: every DSP's response time, bid and outcome](docs/screenshots/auction-detail.jpg) |
